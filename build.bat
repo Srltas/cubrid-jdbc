@@ -8,14 +8,12 @@ rem build script for MS Windows.
 rem
 rem Requirements
 rem - jdk 1.6 or higher
-rem - build tools (ant)
+rem - build tools (gradle)
 
 set SHELL_PATH=%~dp0
 set OUTPUT_PATH=%SHELL_PATH%\output
 set GIT_FILE=C:\Program Files\Git\bin\git.exe
 set JAVA_FILE=%JAVA_HOME%\bin\java.exe
-set FIND_ANT1=%ANT_HOME%\bin\ant
-set FIND_ANT2=%ANT%\bin\ant
 set CMAKE_PATH=C:\Program Files\CMake\bin\cmake.exe
 
 if "%*" == "clean" GOTO :CHECK_ENV
@@ -35,23 +33,6 @@ if "%JAVA_HOME%" == "" (
   echo "[ERROR] set environment variable is required. (JAVA_HOME)"
   GOTO :EOF 
 )
-
-call :FINDEXEC ant ANT_PATH "%ANT_PATH%"
-if "%ANT_PATH%" == "" (
-  call :FINDEXEC ant FIND_ANT1 "%FIND_ANT1%"
-  if "%FIND_ANT1%" == "\bin\ant" (
-    call :FINDEXEC ant FIND_ANT2 "%FIND_ANT2%"
-    if "%FIND_ANT2%" == "\bin\ant" (
-      echo "set environment variable is required. (ANT_HOME or ANT)"
-      GOTO :EOF 
-    ) else (
-      set ANT_PATH=%FIND_ANT2%
-		)
-	) else (
-		set ANT_PATH=%FIND_ANT1%
-	)
-)
-GOTO :BUILD
 
 :BUILD
 if "%*" == "clean" (

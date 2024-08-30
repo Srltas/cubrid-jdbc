@@ -47,11 +47,6 @@ function check_env ()
     echo "[ERROR] Please check JAVA_HOME Or JAVA PATH" 
     exit 0
   fi
-
-  if [ "x$ant_file" = "x" ]; then
-    echo "[ERROR] Pleasse check ANT PATH (Build Tools)"
-    exit 0
-  fi
 }
 
 if [ -z $arg ]; then

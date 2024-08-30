@@ -1,0 +1,66 @@
+plugins {
+    id 'java'
+}
+
+Properties properties = new Properties()
+def propertiesFile = project.rootProject.file('output/build.properties')
+
+if (propertiesFile.exists()) {
+    propertiesFile.withInputStream {stream -> properties.load(stream)}
+    println "Loaded properteis from ${propertiesFile}"
+} else {
+    println "build.properties not found, using default values."
+}
+
+def basedir = properties.getProperty('basedir', "$projectDir/output")
+def version = properties.getProperty('version', '0.0.0')
+
+sourceSets {
+    main {
+        java {
+            srcDirs 'src/jdbc'
+        }
+        resources {
+            srcDirs 'src/jdbc'
+            include 'sql-error-codes.xml'
+            include 'META-INF/services/java.sql.Driver'
+        }
+    }
+}
+
+tasks.register('srcJarJDBC', Jar) {
+    archiveFileName = "JDBC-${version}-cubrid-src.jar"
+    from(sourceSets.main.java.srcDirs) {
+        include '**/*.java'
+        filter {line -> line.replace('JDBC_DRIVER_VERSION_STRING', version) }
+    }
+    from('src/jdbc/sql-error-codes.xml')
+    manifest {
+        attributes(
+            'Service-Provider': 'cubrid.jdbc.driver.CUBRIDDriver'
+        )
+    }
+    destinationDirectory = file(basedir)
+}
+
+compileJava {
+    options.encoding = 'UTF-8'
+    options.debug = true
+    options.debugOptions.debugLevel = 'lines,source,vars'
+    sourceCompatibility = 1.8
+    targetCompatibility = 1.8
+}
+
+jar {
+    jar.archiveFileName = "JDBC-${version}-cubrid.jar"
+    manifest {
+        attributes 'Title': "CUBRID JDBC Driver ${version} for CUBRID",
+        'Version': version,
+        'Vendor': 'CUBRID Corporation'
+    }
+    destinationDirectory = file(basedir)
+}
+
+build {
+    dependsOn srcJarJDBC
+}

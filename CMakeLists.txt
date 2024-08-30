@@ -24,12 +24,6 @@ message(STATUS "=========== JDBC ===========")
 
 # check enviroment
 include(FindJava)
-find_package(Java 1.6 COMPONENTS Development)
-
-find_program(ANT ant PATHS $ENV{ANT_HOME} ENV PATH)
-if(NOT ANT)
-  message(FATAL_ERROR "The ANT was not found. check PATH or install ant to build JDBC")
-endif(NOT ANT)
 
 # check built as sub_directory
 if (EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/CMakeLists.txt)
@@ -51,10 +45,10 @@ add_custom_command(TARGET jdbc_build PRE_BUILD
   COMMENT "Cleaning CUBRID JDBC project and Generating JDBC VERSION-DIST file ..."
 )
 
-# build with ant
+# build with gradle
 add_custom_command(TARGET jdbc_build
-  COMMAND ${ANT} dist-cubrid -buildfile ${CMAKE_CURRENT_SOURCE_DIR}/build.xml
-  COMMENT "Build JDBC driver with Ant ..."
+  COMMAND gradle -p ${CMAKE_SOURCE_DIR} build
+  COMMENT "Build JDBC driver with Gradle ..."
 )
 
 # generate cubrid_jdbc.jar

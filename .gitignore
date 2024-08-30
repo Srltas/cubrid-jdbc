@@ -1,2 +1,9 @@
 output/
+build/
+
 *.jar
+*.swp
+
+.DS_Store
+.gradle/
+.idea/
