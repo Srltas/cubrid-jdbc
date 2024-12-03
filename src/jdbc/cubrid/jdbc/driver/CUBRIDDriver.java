@@ -87,6 +87,7 @@ public class CUBRIDDriver implements Driver {
             "jdbc:cubrid(-oracle|-mysql)?:([a-zA-Z_0-9\\.-]*):([0-9]*):([^:]+):([^:]*):([^:]*):(\\?[a-zA-Z_0-9]+=[^&=?]+(&[a-zA-Z_0-9]+=[^&=?]+)*)?";
     private static final String CUBRID_JDBC_URL_HEADER = "jdbc:cubrid";
     private static final String ENV_JDBC_PROP_NAME = "CUBRID_JDBC_PROP";
+    private int conn_count = 0;
 
     static {
         try {
@@ -265,9 +266,9 @@ public class CUBRIDDriver implements Driver {
                 altHostList.add(st.nextToken());
             }
 
-            if (connProperties.getConnLoadBal()) {
-                Collections.shuffle(altHostList);
-            }
+            String loadBalValue = connProperties.getConnLoadBal();
+
+            adjustHostList(loadBalValue, altHostList);
             try {
                 u_con =
                         (UClientSideConnection)
@@ -345,5 +346,25 @@ public class CUBRIDDriver implements Driver {
     private boolean existPropertiesFile(String filePath) {
         File file = new File(filePath);
         return file.exists();
+    }
+
+    private void adjustHostList(String loadBalValue, ArrayList<String> altHostList) {
+        if (ConnectionProperties.LB_VAL_TRUE.equals(loadBalValue)
+                || ConnectionProperties.LB_VAL_ROUND_ROBIN.equals(loadBalValue)) {
+            int count = increment_conn_count();
+            int dist = (count > altHostList.size()) ? (count - 1) % altHostList.size() : count - 1;
+            Collections.rotate(altHostList, -dist);
+        } else if (ConnectionProperties.LB_VAL_SHUFFLE.equals(loadBalValue)) {
+            Collections.shuffle(altHostList);
+        } else if (ConnectionProperties.LB_VAL_FALSE.equals(loadBalValue)) {
+            // do nothing
+        } else {
+            throw new IllegalArgumentException("Invalid loadBalValue: " + loadBalValue);
+        }
+    }
+
+    private synchronized int increment_conn_count() {
+        conn_count = (conn_count >= Integer.MAX_VALUE) ? 1 : conn_count + 1;
+        return conn_count;
     }
 }

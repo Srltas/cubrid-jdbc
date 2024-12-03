@@ -43,6 +43,10 @@ import java.util.StringTokenizer;
 
 public class ConnectionProperties {
     static ArrayList<Field> PROPERTY_LIST = new ArrayList<Field>();
+    public static final String LB_VAL_TRUE = "true";
+    public static final String LB_VAL_FALSE = "false";
+    public static final String LB_VAL_SHUFFLE = "sh";
+    public static final String LB_VAL_ROUND_ROBIN = "rr";
 
     static {
         try {
@@ -108,8 +112,8 @@ public class ConnectionProperties {
                         CUBRIDJDBCErrorCode.invalid_url, " illegal access properties", null);
             }
         }
-        if (this.getConnLoadBal() && this.getAltHosts() == null) {
-            this.connLoadBal.setValue("false");
+        if (!this.getConnLoadBal().equals(LB_VAL_FALSE) && this.getAltHosts() == null) {
+            this.connLoadBal.setValue(LB_VAL_FALSE);
         }
         if (this.getReconnectTime() < (BrokerHealthCheck.MONITORING_INTERVAL / 1000)) {
             this.rcTime.setValue((Integer) (BrokerHealthCheck.MONITORING_INTERVAL / 1000));
@@ -335,6 +339,30 @@ public class ConnectionProperties {
         }
     }
 
+    class StringLoadBalanceProperty extends ConnectionProperty {
+        String[] allowableValues = {LB_VAL_TRUE, LB_VAL_FALSE, LB_VAL_SHUFFLE, LB_VAL_ROUND_ROBIN};
+
+        StringLoadBalanceProperty(String propertyName, Object defaultValue) {
+            super(propertyName, defaultValue, 0, 0);
+        }
+
+        String getValueAsString() {
+            return (String) valueAsObject;
+        }
+
+        @Override
+        boolean validateValue(Object o) {
+            if (o instanceof String) {
+                for (int i = 0; i < allowableValues.length; i++) {
+                    if (allowableValues[i].equalsIgnoreCase((String) o)) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+    }
+
     BooleanConnectionProperty logOnException =
             new BooleanConnectionProperty("logOnException", false);
 
@@ -369,7 +397,8 @@ public class ConnectionProperties {
 
     StringConnectionProperty altHosts = new StringConnectionProperty("altHosts", null);
 
-    BooleanConnectionProperty connLoadBal = new BooleanConnectionProperty("loadBalance", false);
+    StringLoadBalanceProperty connLoadBal =
+            new StringLoadBalanceProperty("loadBalance", LB_VAL_FALSE);
 
     ZeroDateTimeBehaviorConnectionProperty zeroDateTimeBehavior =
             new ZeroDateTimeBehaviorConnectionProperty(
@@ -440,8 +469,8 @@ public class ConnectionProperties {
         return altHosts.getValueAsString();
     }
 
-    public boolean getConnLoadBal() {
-        return connLoadBal.getValueAsBoolean();
+    public String getConnLoadBal() {
+        return connLoadBal.getValueAsString();
     }
 
     public String getZeroDateTimeBehavior() {
