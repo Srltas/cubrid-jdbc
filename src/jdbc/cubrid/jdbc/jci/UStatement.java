@@ -1515,13 +1515,11 @@ public class UStatement {
                     && (obj instanceof Double)) {
                 retValue =
                         new BigDecimal(((Number) obj).doubleValue(), MathContext.DECIMAL64)
-                                .stripTrailingZeros()
-                                .toPlainString();
+                                .stripTrailingZeros().doubleValue();
             } else if (relatedConnection.isOracleCompatNumberBehavior() && (obj instanceof Float)) {
                 retValue =
                         new BigDecimal(((Number) obj).floatValue(), MathContext.DECIMAL32)
-                                .stripTrailingZeros()
-                                .toPlainString();
+                                .stripTrailingZeros().floatValue();
             } else retValue = obj;
         } catch (UJciException e) {
             e.toUError(errorHandler);
