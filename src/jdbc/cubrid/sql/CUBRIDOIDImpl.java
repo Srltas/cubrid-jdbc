@@ -61,9 +61,12 @@ public class CUBRIDOIDImpl implements CUBRIDOID {
      * Just for Driver's uses. DO NOT create an object with this constructor!
      */
     public CUBRIDOIDImpl(CUBRIDConnection con, byte[] o) {
-        cur_con = con;
-        oid = o;
-        is_closed = false;
+        cur_con 
+        = con;
+        oid 
+        = o;
+        is_closed 
+        = false;
     }
 
     public CUBRIDOIDImpl(CUBRIDOID o) {
