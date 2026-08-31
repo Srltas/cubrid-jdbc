@@ -34,6 +34,9 @@ package cubrid.jdbc.jci;
 import cubrid.sql.CUBRIDTimestamp;
 import java.sql.Date;
 import java.sql.Time;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
 
 /**
  * A date or time value as the server sent it, holding both the calendar fields and the epoch the
@@ -46,6 +49,9 @@ import java.sql.Time;
  * keep their old behaviour.
  */
 final class UDateTimeFields {
+    private static final int NANOS_PER_MILLI = 1000000;
+    static final LocalDate TIME_BASE_DATE = LocalDate.of(1970, 1, 1);
+
     private final byte type;
     private final long epoch;
     private final int year;
@@ -108,6 +114,10 @@ final class UDateTimeFields {
         return type != UUType.U_TYPE_TIME;
     }
 
+    private boolean hasTime() {
+        return type != UUType.U_TYPE_DATE;
+    }
+
     private boolean isZeroDate() {
         return hasDate() && year == 0 && month == 0 && day == 0;
     }
@@ -128,5 +138,29 @@ final class UDateTimeFields {
             default:
                 return new CUBRIDTimestamp(epoch, CUBRIDTimestamp.DATETIME);
         }
+    }
+
+    LocalDate toLocalDate() throws UJciException {
+        if (!hasDate()) {
+            throw new UJciException(UErrorCode.ER_TYPE_CONVERSION);
+        }
+        return isZeroDate() ? null : LocalDate.of(year, month, day);
+    }
+
+    LocalTime toLocalTime() throws UJciException {
+        if (!hasTime()) {
+            throw new UJciException(UErrorCode.ER_TYPE_CONVERSION);
+        }
+        return LocalTime.of(hour, minute, second, millisecond * NANOS_PER_MILLI);
+    }
+
+    LocalDateTime toLocalDateTime() throws UJciException {
+        if (!hasDate()) {
+            return LocalDateTime.of(TIME_BASE_DATE, toLocalTime());
+        }
+        return isZeroDate()
+                ? null
+                : LocalDateTime.of(
+                        year, month, day, hour, minute, second, millisecond * NANOS_PER_MILLI);
     }
 }

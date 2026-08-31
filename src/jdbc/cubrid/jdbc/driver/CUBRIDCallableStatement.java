@@ -53,6 +53,9 @@ import java.sql.SQLXML;
 import java.sql.Statement;
 import java.sql.Time;
 import java.sql.Timestamp;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.Calendar;
 import java.util.Map;
 
@@ -609,6 +612,45 @@ public class CUBRIDCallableStatement extends CUBRIDPreparedStatement implements 
         checkBindError();
     }
 
+    private LocalDate getLocalDate(int index) throws SQLException {
+        checkIsOpen();
+        beforeGetValue(index);
+
+        LocalDate value;
+        synchronized (u_stmt) {
+            value = u_stmt.getLocalDate(index);
+            error = u_stmt.getRecentError();
+        }
+        checkGetXXXError();
+        return value;
+    }
+
+    private LocalTime getLocalTime(int index) throws SQLException {
+        checkIsOpen();
+        beforeGetValue(index);
+
+        LocalTime value;
+        synchronized (u_stmt) {
+            value = u_stmt.getLocalTime(index);
+            error = u_stmt.getRecentError();
+        }
+        checkGetXXXError();
+        return value;
+    }
+
+    private LocalDateTime getLocalDateTime(int index) throws SQLException {
+        checkIsOpen();
+        beforeGetValue(index);
+
+        LocalDateTime value;
+        synchronized (u_stmt) {
+            value = u_stmt.getLocalDateTime(index);
+            error = u_stmt.getRecentError();
+        }
+        checkGetXXXError();
+        return value;
+    }
+
     private void beforeGetValue(int index) throws SQLException {
         if (index < 0 || index > u_stmt.getParameterCount()) {
             throw con.createCUBRIDException(CUBRIDJDBCErrorCode.invalid_index, null);
@@ -875,6 +917,16 @@ public class CUBRIDCallableStatement extends CUBRIDPreparedStatement implements 
         if (type == Double.class) {
             double value = getDouble(parameterIndex);
             return wasNull() ? null : type.cast(value);
+        }
+
+        if (type == LocalDate.class) {
+            return type.cast(getLocalDate(parameterIndex));
+        }
+        if (type == LocalTime.class) {
+            return type.cast(getLocalTime(parameterIndex));
+        }
+        if (type == LocalDateTime.class) {
+            return type.cast(getLocalDateTime(parameterIndex));
         }
 
         throw con.createCUBRIDException(

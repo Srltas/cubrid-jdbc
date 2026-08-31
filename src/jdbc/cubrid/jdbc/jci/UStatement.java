@@ -55,6 +55,9 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Time;
 import java.sql.Timestamp;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 
@@ -1346,6 +1349,76 @@ public class UStatement {
         } catch (UJciException e) {
             e.toUError(errorHandler);
         }
+        return null;
+    }
+
+    public synchronized LocalDate getLocalDate(int index) {
+        UDateTimeFields fields = dateTimeFieldsOf(index);
+        if (fields == null) return null;
+
+        try {
+            return fields.toLocalDate();
+        } catch (UJciException e) {
+            e.toUError(errorHandler);
+        }
+        return null;
+    }
+
+    public synchronized LocalTime getLocalTime(int index) {
+        UDateTimeFields fields = dateTimeFieldsOf(index);
+        if (fields == null) return null;
+
+        try {
+            return fields.toLocalTime();
+        } catch (UJciException e) {
+            e.toUError(errorHandler);
+        }
+        return null;
+    }
+
+    public synchronized LocalDateTime getLocalDateTime(int index) {
+        UDateTimeFields fields = dateTimeFieldsOf(index);
+        if (fields == null) return null;
+
+        try {
+            return fields.toLocalDateTime();
+        } catch (UJciException e) {
+            e.toUError(errorHandler);
+        }
+        return null;
+    }
+
+    private UDateTimeFields dateTimeFieldsOf(int index) {
+        errorHandler = new UError(relatedConnection);
+
+        if (isClosed == true) {
+            errorHandler.setErrorCode(UErrorCode.ER_IS_CLOSED);
+            return null;
+        }
+        if (index < 0 || index >= columnNumber) {
+            errorHandler.setErrorCode(UErrorCode.ER_COLUMN_INDEX);
+            return null;
+        }
+        if (checkReFetch() != true) return null;
+        if (fetchedTupleNumber <= 0) {
+            errorHandler.setErrorCode(UErrorCode.ER_NO_MORE_DATA);
+            return null;
+        }
+
+        Object obj;
+        if ((tuples == null)
+                || (tuples[cursorPosition - currentFirstCursor] == null)
+                || ((obj = tuples[cursorPosition - currentFirstCursor].getAttribute(index))
+                        == null)) {
+            errorHandler.setErrorCode(UErrorCode.ER_WAS_NULL);
+            return null;
+        }
+
+        if (obj instanceof UDateTimeFields) {
+            return (UDateTimeFields) obj;
+        }
+
+        errorHandler.setErrorCode(UErrorCode.ER_TYPE_CONVERSION);
         return null;
     }
 

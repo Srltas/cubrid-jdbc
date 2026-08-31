@@ -35,6 +35,7 @@ import cubrid.jdbc.jci.UColumnInfo;
 import cubrid.jdbc.jci.UError;
 import cubrid.jdbc.jci.UErrorCode;
 import cubrid.jdbc.jci.UStatement;
+import cubrid.jdbc.jci.UUType;
 import cubrid.sql.CUBRIDOID;
 import java.io.Closeable;
 import java.io.IOException;
@@ -59,6 +60,9 @@ import java.sql.SQLXML;
 import java.sql.Statement;
 import java.sql.Time;
 import java.sql.Timestamp;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.HashMap;
@@ -1678,6 +1682,76 @@ public class CUBRIDResultSet implements ResultSet {
         }
     }
 
+    private LocalDate getLocalDate(int columnIndex) throws SQLException {
+        checkJavaTimeColumn(columnIndex, LocalDate.class);
+
+        LocalDate value;
+        synchronized (u_stmt) {
+            value = u_stmt.getLocalDate(columnIndex - 1);
+            error = u_stmt.getRecentError();
+        }
+
+        checkGetXXXError();
+        return value;
+    }
+
+    private LocalTime getLocalTime(int columnIndex) throws SQLException {
+        checkJavaTimeColumn(columnIndex, LocalTime.class);
+
+        LocalTime value;
+        synchronized (u_stmt) {
+            value = u_stmt.getLocalTime(columnIndex - 1);
+            error = u_stmt.getRecentError();
+        }
+
+        checkGetXXXError();
+        return value;
+    }
+
+    private LocalDateTime getLocalDateTime(int columnIndex) throws SQLException {
+        checkJavaTimeColumn(columnIndex, LocalDateTime.class);
+
+        LocalDateTime value;
+        synchronized (u_stmt) {
+            value = u_stmt.getLocalDateTime(columnIndex - 1);
+            error = u_stmt.getRecentError();
+        }
+
+        checkGetXXXError();
+        return value;
+    }
+
+    private void checkJavaTimeColumn(int columnIndex, Class<?> type) throws SQLException {
+        checkRowIsValidForGet();
+        checkColumnIsValid(columnIndex);
+
+        if (isJavaTimeConversionSupported(column_info[columnIndex - 1].getColumnType(), type)) {
+            return;
+        }
+
+        throw con.createCUBRIDException(
+                CUBRIDJDBCErrorCode.invalid_value,
+                CUBRIDException.cannotConvertMessage(type),
+                null);
+    }
+
+    private static boolean isJavaTimeConversionSupported(byte columnType, Class<?> type) {
+        switch (columnType) {
+            case UUType.U_TYPE_DATE:
+                return type == LocalDate.class || type == LocalDateTime.class;
+            case UUType.U_TYPE_TIME:
+                return type == LocalTime.class || type == LocalDateTime.class;
+            case UUType.U_TYPE_TIMESTAMP:
+            case UUType.U_TYPE_DATETIME:
+                return true;
+            case UUType.U_TYPE_NULL:
+                /* The server did not declare a type, so the decoded value carries its own. */
+                return true;
+            default:
+                return false;
+        }
+    }
+
     private void beforeGetValue(int columnIndex) throws SQLException {
         checkRowIsValidForGet();
         checkColumnIsValid(columnIndex);
@@ -2179,6 +2253,16 @@ public class CUBRIDResultSet implements ResultSet {
         if (type == Double.class) {
             double value = getDouble(columnIndex);
             return wasNull() ? null : type.cast(value);
+        }
+
+        if (type == LocalDate.class) {
+            return type.cast(getLocalDate(columnIndex));
+        }
+        if (type == LocalTime.class) {
+            return type.cast(getLocalTime(columnIndex));
+        }
+        if (type == LocalDateTime.class) {
+            return type.cast(getLocalDateTime(columnIndex));
         }
 
         throw con.createCUBRIDException(
