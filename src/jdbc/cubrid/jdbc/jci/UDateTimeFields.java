@@ -51,6 +51,8 @@ import java.time.LocalTime;
 final class UDateTimeFields {
     private static final int NANOS_PER_MILLI = 1000000;
     static final LocalDate TIME_BASE_DATE = LocalDate.of(1970, 1, 1);
+    private static final LocalDateTime ROUNDED_DATETIME = LocalDateTime.of(1, 1, 1, 0, 0, 0);
+    private static final LocalDateTime ROUNDED_TIMESTAMP = LocalDateTime.of(1970, 1, 1, 0, 0, 0);
 
     private final byte type;
     private final long epoch;
@@ -140,27 +142,34 @@ final class UDateTimeFields {
         }
     }
 
+    private LocalDateTime roundedZeroDate() {
+        return type == UUType.U_TYPE_TIMESTAMP ? ROUNDED_TIMESTAMP : ROUNDED_DATETIME;
+    }
+
     LocalDate toLocalDate() throws UJciException {
         if (!hasDate()) {
             throw new UJciException(UErrorCode.ER_TYPE_CONVERSION);
         }
-        return isZeroDate() ? null : LocalDate.of(year, month, day);
+        return isZeroDate() ? roundedZeroDate().toLocalDate() : LocalDate.of(year, month, day);
     }
 
     LocalTime toLocalTime() throws UJciException {
         if (!hasTime()) {
             throw new UJciException(UErrorCode.ER_TYPE_CONVERSION);
         }
-        return LocalTime.of(hour, minute, second, millisecond * NANOS_PER_MILLI);
+        return isZeroDate()
+                ? roundedZeroDate().toLocalTime()
+                : LocalTime.of(hour, minute, second, millisecond * NANOS_PER_MILLI);
     }
 
     LocalDateTime toLocalDateTime() throws UJciException {
         if (!hasDate()) {
             return LocalDateTime.of(TIME_BASE_DATE, toLocalTime());
         }
-        return isZeroDate()
-                ? null
-                : LocalDateTime.of(
-                        year, month, day, hour, minute, second, millisecond * NANOS_PER_MILLI);
+        if (isZeroDate()) {
+            return roundedZeroDate();
+        }
+        return LocalDateTime.of(
+                year, month, day, hour, minute, second, millisecond * NANOS_PER_MILLI);
     }
 }
