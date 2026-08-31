@@ -91,4 +91,12 @@ public class CUBRIDException extends SQLException {
     static String cannotUnwrapMessage(Class<?> iface) {
         return " - cannot unwrap to " + iface.getName();
     }
+
+    static String nullTypeMessage() {
+        return " - type is null";
+    }
+
+    static String cannotConvertMessage(Class<?> type) {
+        return " - cannot convert to " + type.getName();
+    }
 }

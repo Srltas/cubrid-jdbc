@@ -2120,13 +2120,76 @@ public class CUBRIDResultSet implements ResultSet {
     }
 
     /* JDK 1.7 */
-    public <T> T getObject(int columnIndex, Class<T> type) throws SQLException {
-        throw CUBRIDException.notSupported();
+    public synchronized <T> T getObject(int columnIndex, Class<T> type) throws SQLException {
+        checkIsOpen();
+        if (type == null) {
+            throw con.createCUBRIDException(
+                    CUBRIDJDBCErrorCode.invalid_value, CUBRIDException.nullTypeMessage(), null);
+        }
+
+        if (type == String.class) {
+            return type.cast(getString(columnIndex));
+        }
+        if (type == BigDecimal.class) {
+            return type.cast(getBigDecimal(columnIndex));
+        }
+        if (type == byte[].class) {
+            return type.cast(getBytes(columnIndex));
+        }
+        if (type == Date.class) {
+            return type.cast(getDate(columnIndex));
+        }
+        if (type == Time.class) {
+            return type.cast(getTime(columnIndex));
+        }
+        if (type == Timestamp.class) {
+            return type.cast(getTimestamp(columnIndex));
+        }
+        if (type == Blob.class) {
+            return type.cast(getBlob(columnIndex));
+        }
+        if (type == Clob.class) {
+            return type.cast(getClob(columnIndex));
+        }
+
+        if (type == Boolean.class) {
+            boolean value = getBoolean(columnIndex);
+            return wasNull() ? null : type.cast(value);
+        }
+        if (type == Byte.class) {
+            byte value = getByte(columnIndex);
+            return wasNull() ? null : type.cast(value);
+        }
+        if (type == Short.class) {
+            short value = getShort(columnIndex);
+            return wasNull() ? null : type.cast(value);
+        }
+        if (type == Integer.class) {
+            int value = getInt(columnIndex);
+            return wasNull() ? null : type.cast(value);
+        }
+        if (type == Long.class) {
+            long value = getLong(columnIndex);
+            return wasNull() ? null : type.cast(value);
+        }
+        if (type == Float.class) {
+            float value = getFloat(columnIndex);
+            return wasNull() ? null : type.cast(value);
+        }
+        if (type == Double.class) {
+            double value = getDouble(columnIndex);
+            return wasNull() ? null : type.cast(value);
+        }
+
+        throw con.createCUBRIDException(
+                CUBRIDJDBCErrorCode.invalid_value,
+                CUBRIDException.cannotConvertMessage(type),
+                null);
     }
 
     /* JDK 1.7 */
-    public <T> T getObject(String columnLabel, Class<T> type) throws SQLException {
-        throw CUBRIDException.notSupported();
+    public synchronized <T> T getObject(String columnLabel, Class<T> type) throws SQLException {
+        return getObject(findColumn(columnLabel), type);
     }
 
     // ------------------------- JDBC 4.2 -----------------------------------

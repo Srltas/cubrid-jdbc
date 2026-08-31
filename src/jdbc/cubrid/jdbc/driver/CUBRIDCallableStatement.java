@@ -817,7 +817,70 @@ public class CUBRIDCallableStatement extends CUBRIDPreparedStatement implements 
 
     /* JDK 1.7 */
     public <T> T getObject(int parameterIndex, Class<T> type) throws SQLException {
-        throw CUBRIDException.notSupported();
+        checkIsOpen();
+        if (type == null) {
+            throw con.createCUBRIDException(
+                    CUBRIDJDBCErrorCode.invalid_value, CUBRIDException.nullTypeMessage(), null);
+        }
+
+        if (type == String.class) {
+            return type.cast(getString(parameterIndex));
+        }
+        if (type == BigDecimal.class) {
+            return type.cast(getBigDecimal(parameterIndex));
+        }
+        if (type == byte[].class) {
+            return type.cast(getBytes(parameterIndex));
+        }
+        if (type == Date.class) {
+            return type.cast(getDate(parameterIndex));
+        }
+        if (type == Time.class) {
+            return type.cast(getTime(parameterIndex));
+        }
+        if (type == Timestamp.class) {
+            return type.cast(getTimestamp(parameterIndex));
+        }
+        if (type == Blob.class) {
+            return type.cast(getBlob(parameterIndex));
+        }
+        if (type == Clob.class) {
+            return type.cast(getClob(parameterIndex));
+        }
+
+        if (type == Boolean.class) {
+            boolean value = getBoolean(parameterIndex);
+            return wasNull() ? null : type.cast(value);
+        }
+        if (type == Byte.class) {
+            byte value = getByte(parameterIndex);
+            return wasNull() ? null : type.cast(value);
+        }
+        if (type == Short.class) {
+            short value = getShort(parameterIndex);
+            return wasNull() ? null : type.cast(value);
+        }
+        if (type == Integer.class) {
+            int value = getInt(parameterIndex);
+            return wasNull() ? null : type.cast(value);
+        }
+        if (type == Long.class) {
+            long value = getLong(parameterIndex);
+            return wasNull() ? null : type.cast(value);
+        }
+        if (type == Float.class) {
+            float value = getFloat(parameterIndex);
+            return wasNull() ? null : type.cast(value);
+        }
+        if (type == Double.class) {
+            double value = getDouble(parameterIndex);
+            return wasNull() ? null : type.cast(value);
+        }
+
+        throw con.createCUBRIDException(
+                CUBRIDJDBCErrorCode.invalid_value,
+                CUBRIDException.cannotConvertMessage(type),
+                null);
     }
 
     /* JDK 1.7 */
