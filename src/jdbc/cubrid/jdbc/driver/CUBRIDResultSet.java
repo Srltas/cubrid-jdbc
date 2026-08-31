@@ -63,10 +63,12 @@ import java.sql.Timestamp;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.Locale;
 import java.util.Map;
 import java.util.TimeZone;
 
@@ -76,6 +78,13 @@ import java.util.TimeZone;
  * @version 2.0
  */
 public class CUBRIDResultSet implements ResultSet {
+    private static final DateTimeFormatter DATE_LITERAL =
+            DateTimeFormatter.ofPattern("MM/dd/uuuu", Locale.ROOT);
+    private static final DateTimeFormatter TIME_LITERAL =
+            DateTimeFormatter.ofPattern("HH:mm:ss", Locale.ROOT);
+    private static final DateTimeFormatter DATETIME_LITERAL =
+            DateTimeFormatter.ofPattern("MM/dd/uuuu HH:mm:ss.SSS", Locale.ROOT);
+
     public boolean complete_on_close;
 
     private CUBRIDConnection con;
@@ -1847,7 +1856,13 @@ public class CUBRIDResultSet implements ResultSet {
         }
 
         String strvalue = null;
-        if (value instanceof java.sql.Time) {
+        if (value instanceof LocalTime) {
+            strvalue = "'" + TIME_LITERAL.format((LocalTime) value) + "'";
+        } else if (value instanceof LocalDate) {
+            strvalue = "'" + DATE_LITERAL.format((LocalDate) value) + "'";
+        } else if (value instanceof LocalDateTime) {
+            strvalue = "'" + DATETIME_LITERAL.format((LocalDateTime) value) + "'";
+        } else if (value instanceof java.sql.Time) {
             java.text.SimpleDateFormat format = new java.text.SimpleDateFormat("HH:mm:ss");
             strvalue = "'" + format.format((java.util.Date) value) + "'";
         } else if (value instanceof java.sql.Date) {
