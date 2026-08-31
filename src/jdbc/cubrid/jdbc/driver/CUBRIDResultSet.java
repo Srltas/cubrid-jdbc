@@ -1789,6 +1789,11 @@ public class CUBRIDResultSet implements ResultSet {
         checkColumnIsValid(columnIndex);
         checkColumnIsUpdatable(columnIndex);
 
+        if (CUBRIDPreparedStatement.isUnsupportedJavaTime(value)) {
+            throw CUBRIDException.notSupported(
+                    CUBRIDException.cannotStoreMessage(value.getClass()));
+        }
+
         updates[columnIndex - 1] = value;
         if (updated[columnIndex - 1] == false) {
             updated[columnIndex - 1] = true;

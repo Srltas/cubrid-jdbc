@@ -438,6 +438,18 @@ public class UStatement {
         bindValue(index, UUType.U_TYPE_VARBIT, data);
     }
 
+    public void bind(int index, LocalDate value) {
+        bindValue(index, UUType.U_TYPE_DATE, value);
+    }
+
+    public void bind(int index, LocalTime value) {
+        bindValue(index, UUType.U_TYPE_TIME, value);
+    }
+
+    public void bind(int index, LocalDateTime value) {
+        bindValue(index, UUType.U_TYPE_DATETIME, value);
+    }
+
     public void bind(int index, Date value) {
         bindValue(index, UUType.U_TYPE_DATE, value);
     }
