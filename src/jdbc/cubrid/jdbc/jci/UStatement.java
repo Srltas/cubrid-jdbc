@@ -2035,7 +2035,7 @@ public class UStatement {
             return null;
         }
 
-        return obj;
+        return UDateTimeFields.sqlValueOf(obj);
     }
 
     private boolean checkReFetch() {
@@ -2232,12 +2232,12 @@ public class UStatement {
             case UUType.U_TYPE_TIME:
                 return inBuffer.readTime();
             case UUType.U_TYPE_TIMESTAMP:
-                return inBuffer.readTimestamp(false);
+                return inBuffer.readTimestampFields(false);
             case UUType.U_TYPE_TIMESTAMPTZ:
             case UUType.U_TYPE_TIMESTAMPLTZ:
                 return inBuffer.readTimestamptz(dataSize);
             case UUType.U_TYPE_DATETIME:
-                return inBuffer.readDatetime(false);
+                return inBuffer.readDatetimeFields(false);
             case UUType.U_TYPE_DATETIMETZ:
             case UUType.U_TYPE_DATETIMELTZ:
                 return inBuffer.readDatetimetz(dataSize);
@@ -2255,7 +2255,9 @@ public class UStatement {
                         if (eleSize <= 0) aArray.setElement(i, null);
                         else
                             aArray.setElement(
-                                    i, readData(inBuffer, baseType, eleSize, charsetName));
+                                    i,
+                                    UDateTimeFields.sqlValueOf(
+                                            readData(inBuffer, baseType, eleSize, charsetName)));
                     }
                     return aArray;
                 }
