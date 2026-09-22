@@ -1739,6 +1739,27 @@ public abstract class UConnection {
         return false;
     }
 
+    /* PROTOCOL_V11 is server 11.2. A gateway speaks the same protocol over another database. */
+    public synchronized boolean supportSchema() {
+        errorHandler = new UError(this);
+
+        /* XA, DataSource and useLazyConnection ask for metadata before the handshake. */
+        if (protocolVersion == 0 && isClosed == false) {
+            try {
+                setBeginTime();
+                checkReconnect();
+            } catch (IOException e) {
+                logException(e);
+                errorHandler.setErrorCode(UErrorCode.ER_COMMUNICATION);
+            } catch (UJciException e) {
+                logException(e);
+                e.toUError(errorHandler);
+            }
+        }
+
+        return isConnectedToCubrid() && protocolVersion >= PROTOCOL_V11;
+    }
+
     public boolean isOracleCompatNumberBehavior() {
         if (protocolVersion >= PROTOCOL_V12) {
             if (brokerInfo == null) return false;
