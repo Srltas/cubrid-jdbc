@@ -46,15 +46,16 @@ add_custom_command(TARGET jdbc_build PRE_BUILD
   COMMENT "Cleaning CUBRID JDBC project and Generating JDBC VERSION-DIST file ..."
 )
 
-# build with the Gradle wrapper in this repository, which pins the Gradle version
+# build with the Gradle wrapper in this repository, which pins the Gradle version. It runs in a
+# Gradle daemon, as pl_engine's build does, so that the engine's later Gradle builds reuse it.
 if(UNIX)
   add_custom_command(TARGET jdbc_build POST_BUILD
-    COMMAND ${CUBRID_JDBC_SOURCE_DIR}/gradlew --no-daemon -p ${CUBRID_JDBC_SOURCE_DIR} buildJdbc
+    COMMAND ${CUBRID_JDBC_SOURCE_DIR}/gradlew -p ${CUBRID_JDBC_SOURCE_DIR} buildJdbc
     COMMENT "Build JDBC driver with Gradle ..."
   )
 else(UNIX)
   add_custom_command(TARGET jdbc_build POST_BUILD
-    COMMAND cmd.exe /C "${CUBRID_JDBC_SOURCE_DIR}/gradlew.bat --no-daemon -p ${CUBRID_JDBC_SOURCE_DIR} buildJdbc"
+    COMMAND cmd.exe /C "${CUBRID_JDBC_SOURCE_DIR}/gradlew.bat -p ${CUBRID_JDBC_SOURCE_DIR} buildJdbc"
     COMMENT "Build JDBC driver with Gradle ..."
   )
 endif(UNIX)
