@@ -1,0 +1,26 @@
+// Loaded only for a Maven Central release (see "Release to Maven Central" in README.md), so other
+// builds, the engine's jdbc_build included, never download this plugin.
+initscript {
+    repositories {
+        gradlePluginPortal()
+    }
+    dependencies {
+        // 2.0.0 still runs on JDK 8, which the release uses as the engine build does; later 2.x
+        // releases may drop JDK 8, so keep it pinned.
+        classpath 'io.github.gradle-nexus:publish-plugin:2.0.0'
+    }
+}
+
+rootProject {
+    apply plugin: io.github.gradlenexus.publishplugin.NexusPublishPlugin
+    nexusPublishing {
+        repositories {
+            // The Central Portal's OSSRH Staging API, set up as Sonatype documents it for this plugin.
+            // Credentials: a Central Portal user token in sonatypeUsername and sonatypePassword.
+            sonatype {
+                nexusUrl = uri('https://ossrh-staging-api.central.sonatype.com/service/local/')
+                snapshotRepositoryUrl = uri('https://central.sonatype.com/repository/maven-snapshots/')
+            }
+        }
+    }
+}

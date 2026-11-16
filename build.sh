@@ -6,13 +6,12 @@
 # Build and package script for CUBRID JDBC Driver
 # Requirements 
 # - Bash shell
-# - JDK 1.8 or higher
-# - Build tool - ANT
+# - JDK 1.8 to 21 to run Gradle (the driver itself is compiled with JDK 8)
+# - Build tool - Gradle, through the wrapper in this repository (gradlew)
 
 arg=$@
 shell_dir="$( cd "$( dirname "$0" )" && pwd -P )"
 output_dir=$shell_dir/output
-ant_file=$(which ant)
 java_file=$(which java)
 
 function show_usage ()
@@ -36,7 +35,7 @@ function check_env ()
   which_git=$(which git)
   [ $? -eq 0 ] && echo "[INFO] Git File [$which_git"] || echo "[ERROR] Git not found"
 
-  echo "Checking Environment Variables(JAVA) and build tools(ANT)"
+  echo "Checking Environment Variables(JAVA)"
 
   if [ "x$JAVA_HOME" != "x" -a "x$JAVA_HOME" != "x" ]; then
     echo "JAVA_HOME [$JAVA_HOME]"
@@ -45,11 +44,6 @@ function check_env ()
     echo "[INFO] Used Java File ($java_file)"
   else
     echo "[ERROR] Please check JAVA_HOME Or JAVA PATH" 
-    exit 0
-  fi
-
-  if [ "x$ant_file" = "x" ]; then
-    echo "[ERROR] Pleasse check ANT PATH (Build Tools)"
     exit 0
   fi
 }
@@ -63,6 +57,7 @@ elif [ $arg = "clean" ]; then
   if [ -d $output_dir ]; then
     rm -rf $output_dir
   fi
+  rm -rf $shell_dir/build
   rm -fv $shell_dir/*.jar
   exit 0
 elif [ $arg = "--help" -o  $arg = "-h" -o $arg = "-?" ]; then
