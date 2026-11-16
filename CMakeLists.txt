@@ -26,11 +26,6 @@ message(STATUS "=========== JDBC ===========")
 include(FindJava)
 find_package(Java 1.8 COMPONENTS Development)
 
-find_program(ANT ant PATHS $ENV{ANT_HOME} ENV PATH)
-if(NOT ANT)
-  message(FATAL_ERROR "The ANT was not found. check PATH or install ant to build JDBC")
-endif(NOT ANT)
-
 # check built as sub_directory
 if (EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/CMakeLists.txt)
   set (CUBRID_JDBC_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
@@ -51,11 +46,18 @@ add_custom_command(TARGET jdbc_build PRE_BUILD
   COMMENT "Cleaning CUBRID JDBC project and Generating JDBC VERSION-DIST file ..."
 )
 
-# build with ant
-add_custom_command(TARGET jdbc_build
-  COMMAND ${ANT} dist-cubrid -buildfile ${CMAKE_CURRENT_SOURCE_DIR}/build.xml
-  COMMENT "Build JDBC driver with Ant ..."
-)
+# build with the Gradle wrapper in this repository, which pins the Gradle version
+if(UNIX)
+  add_custom_command(TARGET jdbc_build POST_BUILD
+    COMMAND ${CUBRID_JDBC_SOURCE_DIR}/gradlew --no-daemon -p ${CUBRID_JDBC_SOURCE_DIR} buildJdbc
+    COMMENT "Build JDBC driver with Gradle ..."
+  )
+else(UNIX)
+  add_custom_command(TARGET jdbc_build POST_BUILD
+    COMMAND cmd.exe /C "${CUBRID_JDBC_SOURCE_DIR}/gradlew.bat --no-daemon -p ${CUBRID_JDBC_SOURCE_DIR} buildJdbc"
+    COMMENT "Build JDBC driver with Gradle ..."
+  )
+endif(UNIX)
 
 # generate cubrid_jdbc.jar
 add_custom_command(TARGET jdbc_build POST_BUILD

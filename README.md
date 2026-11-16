@@ -20,7 +20,11 @@ Below You will see the brief list of sections to guide You to easily get started
 - http://ftp.cubrid.org
 
 ## HOW TO BUILD CUBRID JDBC Driver
-### CUBRID JDBC Driver Source Build Guide (ANT Build Project)
+### CUBRID JDBC Driver Source Build Guide (Gradle Build Project)
+The build runs through the Gradle wrapper in this repository (`gradlew`), so only a JDK has to be
+installed: JDK 8 to 21 runs Gradle, and the driver is compiled and tested with JDK 8 (Gradle uses
+an installed JDK 8 or downloads one). The first build downloads Gradle itself.
+
 - Windows
   ```
   build.bat 
@@ -31,6 +35,40 @@ Below You will see the brief list of sections to guide You to easily get started
   ```
   ./build.sh 
   ```
+
+`build.sh` and `build.bat` run CMake, which writes the version (`VERSION` and the git commit count)
+to `output/VERSION-DIST` and then runs `gradlew buildJdbc`. The jars land in the repository root:
+`cubrid-jdbc-<version>.jar`, `cubrid-jdbc-<version>-sources.jar`, `cubrid-jdbc-<version>-javadoc.jar`,
+and the link `cubrid_jdbc.jar`.
+
+| Command | Does |
+|---|---|
+| `./gradlew buildJdbc` | builds the three jars (version `VERSION` with serial `0000` until CMake has run) |
+| `./gradlew test` | runs the unit tests (`src/test`, classes named `*Test`) |
+| `./gradlew integrationTest` | runs the load-balance ITs against a live cluster, see `src/test/cubrid/jdbc/lb/it/README.md` |
+
+### Release to Maven Central
+A release uploads `org.cubrid:cubrid-jdbc` to the Central Portal. The upload plugin is configured in
+`gradle/central-publish.init.gradle`, which only the release command loads. Run it with JDK 8, as
+the engine build does; signing uses the local `gpg`.
+
+1. Put the credentials in `~/.gradle/gradle.properties`, never in this repository:
+   ```
+   sonatypeUsername=<Central Portal user token: username>
+   sonatypePassword=<Central Portal user token: password>
+   signing.gnupg.keyName=<GPG key fingerprint>
+   signing.gnupg.passphrase=<GPG key passphrase>
+   ```
+2. Build with `./build.sh`, so the jars carry the release version.
+3. Upload and close the deployment:
+   ```
+   ./gradlew -I gradle/central-publish.init.gradle publishToSonatype closeSonatypeStagingRepository
+   ```
+4. Check the deployment in the Central Portal (Deployments), then publish or drop it.
+
+To look at the files before uploading, `./gradlew publishJdbcPublicationToLocalStagingRepository`
+writes them, signed and with checksums, to `build/staging-repo`; `./gradlew centralBundle` zips them
+for an upload by hand in the Central Portal.
 
 ### CUBRID JDBC Driver 
 - implements an interface to enable access 

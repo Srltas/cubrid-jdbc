@@ -7,15 +7,14 @@ REM
 rem build script for MS Windows.
 rem
 rem Requirements
-rem - jdk 1.8 or higher
-rem - build tools (ant)
+rem - jdk 1.8 to 21 to run Gradle (the driver itself is compiled with jdk 8)
+rem - build tool: Gradle, through the wrapper in this repository (gradlew.bat)
 
 set SHELL_PATH=%~dp0
 set OUTPUT_PATH=%SHELL_PATH%\output
+set BUILD_PATH=%SHELL_PATH%\build
 set GIT_FILE=C:\Program Files\Git\bin\git.exe
 set JAVA_FILE=%JAVA_HOME%\bin\java.exe
-set FIND_ANT1=%ANT_HOME%\bin\ant
-set FIND_ANT2=%ANT%\bin\ant
 set CMAKE_PATH=C:\Program Files\CMake\bin\cmake.exe
 
 if "%*" == "clean" GOTO :CHECK_ENV
@@ -36,26 +35,12 @@ if "%JAVA_HOME%" == "" (
   GOTO :EOF 
 )
 
-call :FINDEXEC ant ANT_PATH "%ANT_PATH%"
-if "%ANT_PATH%" == "" (
-  call :FINDEXEC ant FIND_ANT1 "%FIND_ANT1%"
-  if "%FIND_ANT1%" == "\bin\ant" (
-    call :FINDEXEC ant FIND_ANT2 "%FIND_ANT2%"
-    if "%FIND_ANT2%" == "\bin\ant" (
-      echo "set environment variable is required. (ANT_HOME or ANT)"
-      GOTO :EOF 
-    ) else (
-      set ANT_PATH=%FIND_ANT2%
-		)
-	) else (
-		set ANT_PATH=%FIND_ANT1%
-	)
-)
 GOTO :BUILD
 
 :BUILD
 if "%*" == "clean" (
   rmdir /Q /S %OUTPUT_PATH%
+  rmdir /Q /S %BUILD_PATH%
   DEL /Q /F ".\*.jar"
 ) else (
   if NOT EXIST "%OUTPUT_PATH%" (

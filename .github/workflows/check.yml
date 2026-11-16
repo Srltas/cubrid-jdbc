@@ -110,12 +110,5 @@ jobs:
         with:
           distribution: temurin
           java-version: '8'
-      # build.xml reads the driver version from output/build.properties, which CMake
-      # generates and .gitignore excludes, so it is absent on a fresh checkout.
-      - name: Generate build.properties
-        run: |
-          mkdir -p output
-          cmake -DCUBRID_JDBC_SOURCE_DIR=$PWD -DCUBRID_JDBC_OUTPUT_DIR=$PWD/output \
-                -P cmake/gen_version.cmake
-      - name: Run ant test
-        run: ant test
+      - name: Run gradle test
+        run: ./gradlew test --no-daemon
