@@ -327,9 +327,6 @@ public final class LbDatabaseMetaDataIT {
         if (trimmed.length() == 0) {
             return false;
         }
-        if (trimmed.startsWith("${") && trimmed.endsWith("}")) {
-            return false;
-        }
         return true;
     }
 

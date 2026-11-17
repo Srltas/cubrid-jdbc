@@ -43,11 +43,10 @@ add_custom_target(jdbc_build)
 add_custom_command(TARGET jdbc_build PRE_BUILD
   COMMAND ${CMAKE_COMMAND} -E make_directory ${CUBRID_JDBC_OUTPUT_DIR}
   COMMAND ${CMAKE_COMMAND} -DCUBRID_JDBC_SOURCE_DIR=${CUBRID_JDBC_SOURCE_DIR} -DCUBRID_JDBC_OUTPUT_DIR=${CUBRID_JDBC_OUTPUT_DIR} -P ${CUBRID_JDBC_SOURCE_DIR}/cmake/gen_version.cmake
-  COMMENT "Cleaning CUBRID JDBC project and Generating JDBC VERSION-DIST file ..."
+  COMMENT "Generating JDBC VERSION-DIST file ..."
 )
 
-# build with the Gradle wrapper in this repository, which pins the Gradle version. It runs in a
-# Gradle daemon, as pl_engine's build does, so that the engine's later Gradle builds reuse it.
+# without --no-daemon, so that pl_engine's Gradle build reuses this daemon
 if(UNIX)
   add_custom_command(TARGET jdbc_build POST_BUILD
     COMMAND ${CUBRID_JDBC_SOURCE_DIR}/gradlew -p ${CUBRID_JDBC_SOURCE_DIR} buildJdbc

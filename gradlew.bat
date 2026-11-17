@@ -1,8 +1,5 @@
-@echo off
-
 @rem
-@rem
-@rem Copyright 2016 CUBRID Corporation
+@rem Copyright 2015 the original author or authors.
 @rem
 @rem Licensed under the Apache License, Version 2.0 (the "License");
 @rem you may not use this file except in compliance with the License.
@@ -55,14 +52,9 @@ echo location of your Java installation.
 goto fail
 
 :findJavaFromJavaHome
-
-@rem trim
-for /f "delims=" %%A in ('powershell -Command "[System.Environment]::GetEnvironmentVariable(\"JAVA_HOME\").Trim()"') do set JAVA_HOME=%%A
 set JAVA_HOME=%JAVA_HOME:"=%
+set JAVA_EXE=%JAVA_HOME%/bin/java.exe
 
-set JAVA_EXE=%JAVA_HOME%\bin\java.exe
-
-echo JAVA_EXE in grandlew: %JAVA_EXE%
 if exist "%JAVA_EXE%" goto execute
 
 echo.

@@ -21,8 +21,8 @@ Below You will see the brief list of sections to guide You to easily get started
 
 ## HOW TO BUILD CUBRID JDBC Driver
 ### CUBRID JDBC Driver Source Build Guide (Gradle Build Project)
-The build runs through the Gradle wrapper in this repository (`gradlew`), so only a JDK has to be
-installed: JDK 8 to 21 runs Gradle, and the driver is compiled and tested with JDK 8 (Gradle uses
+The build runs through the Gradle wrapper in this repository (`gradlew`), so Gradle needs no
+installation: JDK 8 to 21 runs it, and the driver is compiled and tested with JDK 8 (Gradle uses
 an installed JDK 8 or downloads one). The first build downloads Gradle itself.
 
 - Windows
@@ -36,7 +36,7 @@ an installed JDK 8 or downloads one). The first build downloads Gradle itself.
   ./build.sh 
   ```
 
-`build.sh` and `build.bat` run CMake, which writes the version (`VERSION` and the git commit count)
+`build.sh` and `build.bat` run CMake (3.21 or later), which writes the version (`VERSION` and the git commit count)
 to `output/VERSION-DIST` and then runs `gradlew buildJdbc`. The jars land in the repository root:
 `cubrid-jdbc-<version>.jar`, `cubrid-jdbc-<version>-sources.jar`, `cubrid-jdbc-<version>-javadoc.jar`,
 and the link `cubrid_jdbc.jar`.
@@ -44,7 +44,7 @@ and the link `cubrid_jdbc.jar`.
 | Command | Does |
 |---|---|
 | `./gradlew buildJdbc` | builds the three jars (version `VERSION` with serial `0000` until CMake has run) |
-| `./gradlew test` | runs the unit tests (`src/test`, classes named `*Test`) |
+| `./gradlew test` | runs the unit tests: every test class in `src/test` but the `*IT` ones |
 | `./gradlew integrationTest` | runs the load-balance ITs against a live cluster, see `src/test/cubrid/jdbc/lb/it/README.md` |
 
 ### CUBRID JDBC Driver 

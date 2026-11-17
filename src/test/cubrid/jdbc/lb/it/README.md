@@ -1,9 +1,9 @@
 # Load-balance integration tests
 
 These tests drive a **real CUBRID cluster** over real brokers. They are not part of
-`./gradlew test`: that task runs `**/*Test.class`, and everything here is named `*IT`, so a normal
-build compiles these files but never runs them. Compiling them is deliberate — it keeps the live
-suite from drifting away from the production API between cluster runs.
+`./gradlew test`: that task leaves out every `*IT` class, so a normal build compiles these files
+but never runs them. Compiling them is deliberate — it keeps the live suite from drifting away
+from the production API between cluster runs.
 
 Run them with the `integrationTest` task described below.
 

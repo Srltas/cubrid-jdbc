@@ -7,7 +7,7 @@
 # Requirements 
 # - Bash shell
 # - JDK 1.8 to 21 to run Gradle (the driver itself is compiled with JDK 8)
-# - Build tool - Gradle, through the wrapper in this repository (gradlew)
+# - Build tool - Gradle wrapper (gradlew)
 
 arg=$@
 shell_dir="$( cd "$( dirname "$0" )" && pwd -P )"
@@ -75,4 +75,6 @@ fi
 
 cd $output_dir > /dev/null
 cmake .. && cmake --build . --target jdbc_build
+rc=$?
 cd - > /dev/null
+exit $rc

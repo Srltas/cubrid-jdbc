@@ -418,9 +418,6 @@ public final class LbStatementApiIT {
         if (trimmed.length() == 0) {
             return false;
         }
-        if (trimmed.startsWith("${") && trimmed.endsWith("}")) {
-            return false;
-        }
         return true;
     }
 

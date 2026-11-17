@@ -365,10 +365,6 @@ public final class LbRoutingDecisionIT {
         if (trimmed.length() == 0) {
             return false;
         }
-        // Ant may pass unresolved placeholders literally (e.g. "${lb.it.jdbc.url}").
-        if (trimmed.startsWith("${") && trimmed.endsWith("}")) {
-            return false;
-        }
         return true;
     }
 

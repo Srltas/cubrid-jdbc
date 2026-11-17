@@ -8,7 +8,7 @@ rem build script for MS Windows.
 rem
 rem Requirements
 rem - jdk 1.8 to 21 to run Gradle (the driver itself is compiled with jdk 8)
-rem - build tool: Gradle, through the wrapper in this repository (gradlew.bat)
+rem - build tool: Gradle wrapper (gradlew.bat)
 
 set SHELL_PATH=%~dp0
 set OUTPUT_PATH=%SHELL_PATH%\output

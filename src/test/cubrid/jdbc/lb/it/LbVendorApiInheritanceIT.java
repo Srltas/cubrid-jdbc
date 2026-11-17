@@ -835,6 +835,6 @@ public final class LbVendorApiInheritanceIT {
     }
 
     private static boolean isEffectivePropertyValue(final String value) {
-        return value != null && value.trim().length() > 0 && value.indexOf("${") < 0;
+        return value != null && value.trim().length() > 0;
     }
 }

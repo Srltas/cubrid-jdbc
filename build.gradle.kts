@@ -8,8 +8,7 @@ plugins {
 
 group = "org.cubrid"
 
-// The serial cmake/gen_version.cmake wrote to output/VERSION-DIST (VERSION and the git commit count),
-// or VERSION with serial 0000 when CMake has not run, e.g. right after a clone.
+// output/VERSION-DIST comes from cmake/gen_version.cmake; before CMake has run, the serial is 0000.
 val versionDist = file("output/VERSION-DIST")
 version = if (versionDist.exists()) versionDist.readText().trim() else file("VERSION").readText().trim() + ".0000"
 val jdbcVersion = version.toString()
@@ -25,12 +24,10 @@ repositories {
 }
 
 dependencies {
-    testImplementation("junit:junit:4.13.2") // brings hamcrest-core 1.3
+    testImplementation("junit:junit:4.13.2")
 }
 
-// CUBRIDDriver.version_string holds @JDBC_DRIVER_VERSION_STRING@, so the compiler gets a copy of the
-// sources with the version filled in.
-val filterSources by tasks.registering(Copy::class) {
+val filterSources by tasks.registering(Sync::class) {
     from("src/jdbc") { include("**/*.java") }
     into(layout.buildDirectory.dir("filtered-src"))
     inputs.property("version", jdbcVersion)
@@ -40,7 +37,7 @@ val filterSources by tasks.registering(Copy::class) {
 
 sourceSets {
     main {
-        java.setSrcDirs(listOf("src/jdbc")) // what IDEs index and javadoc documents
+        java.setSrcDirs(listOf("src/jdbc")) // for IDEs and javadoc; compileJava takes the filtered copy
         resources.setSrcDirs(emptyList<Any>())
     }
     test {
@@ -57,8 +54,6 @@ tasks.compileJava {
     setSource(filterSources)
 }
 
-// Besides the classes, the jars carry the java.sql.Driver service file and an empty
-// CUBRID-JDBC-<version> marker at the root.
 val jarExtras by tasks.registering {
     val dir = layout.buildDirectory.dir("jar-extras")
     inputs.property("version", jdbcVersion)
@@ -72,21 +67,20 @@ val jarExtras by tasks.registering {
     }
 }
 
-// The engine packaging (CPack, build.sh -z jdbc) takes every cubrid-jdbc-*.jar in the project root,
-// so a jar of an older serial left there would ship next to the new one.
 val deleteStaleJars by tasks.registering(Delete::class) {
     delete(provider {
         projectDir.listFiles { f ->
-            f.isFile && f.name.startsWith("cubrid-jdbc-") && f.name.endsWith(".jar") &&
-                !f.name.startsWith("cubrid-jdbc-$jdbcVersion")
+            f.isFile && f.name.endsWith(".jar") && !f.name.startsWith("cubrid-jdbc-$jdbcVersion")
         }?.toList() ?: emptyList()
     })
 }
 
-// Created-By names the JDK that built the jar, as the Ant build wrote it; QA has checked it (CBRD-25401).
+// Created-By names the toolchain JDK, not the one running Gradle. The vendor is Gradle's name for it,
+// e.g. "Eclipse Temurin" where Ant wrote "Temurin".
 val buildJdk = javaToolchains.compilerFor(java.toolchain).get().metadata
 
-// The engine (CPack, build.sh -z jdbc, pl_engine) takes the jars from the project root.
+// The engine packaging (CPack, build.sh -z jdbc) takes every jar in the project root, so deleteStaleJars
+// clears the other ones first, as Ant's clean did.
 tasks.withType<Jar>().configureEach {
     destinationDirectory.set(layout.projectDirectory)
     dependsOn(deleteStaleJars)
@@ -107,6 +101,7 @@ val sourcesJar by tasks.registering(Jar::class) {
 }
 
 tasks.javadoc {
+    isFailOnError = false // as Ant's <javadoc>: report doclint errors and keep building
     (options as StandardJavadocDocletOptions).apply {
         encoding = "UTF-8"
         docEncoding = "UTF-8"
@@ -130,11 +125,9 @@ tasks.register("buildJdbc") {
 
 tasks.test {
     useJUnit()
-    include("**/*Test.class") // the *IT classes need a live cluster: see integrationTest
+    exclude("**/*IT.class")
 }
 
-// The load-balance ITs, run against a live cluster (src/test/cubrid/jdbc/lb/it/README.md). Every
-// -Dlb.it.* given to Gradle reaches the tests; --tests picks a class.
 val integrationTest by tasks.registering(Test::class) {
     description = "Runs the load-balance ITs against a live cluster."
     group = LifecycleBasePlugin.VERIFICATION_GROUP
@@ -143,12 +136,15 @@ val integrationTest by tasks.registering(Test::class) {
     useJUnit()
     include("**/*IT.class")
     filter.isFailOnNoMatchingTests = false // without lb.it.enabled a class gated in @BeforeClass runs no test
-    systemProperties(providers.systemPropertiesPrefixedBy("lb.it.").get())
+    // As JVM arguments: as systemProperties they would be stored in .gradle/, passwords included.
+    val lbIt = providers.systemPropertiesPrefixedBy("lb.it.")
+    jvmArgumentProviders.add(object : CommandLineArgumentProvider {
+        override fun asArguments() = lbIt.get().map { (k, v) -> "-D$k=$v" }
+    })
     outputs.upToDateWhen { false } // the result depends on the cluster, not on the inputs
 }
 
-// Maven Central (org.cubrid:cubrid-jdbc). The upload is configured in gradle/central-publish.init.gradle,
-// which only a release loads.
+// The Maven Central upload is configured in gradle/central-publish.init.gradle, which only release.sh loads.
 publishing {
     publications {
         create<MavenPublication>("jdbc") {
@@ -187,7 +183,6 @@ publishing {
         }
     }
     repositories {
-        // build/staging-repo: what a release uploads, signed and with checksums, to look at beforehand
         maven {
             name = "localStaging"
             url = uri(layout.buildDirectory.dir("staging-repo"))
@@ -195,8 +190,13 @@ publishing {
     }
 }
 
-// The local gpg signs, as release.sh did (signing.gnupg.keyName and signing.gnupg.passphrase in
-// ~/.gradle/gradle.properties); an ASCII-armored key in signingKey and signingPassword wins.
+// A release needs this commit's serial, which only CMake (./build.sh) writes to output/VERSION-DIST.
+gradle.taskGraph.whenReady {
+    if (!versionDist.exists() && allTasks.any { it is PublishToMavenRepository }) {
+        throw GradleException("Run ./build.sh first: output/VERSION-DIST holds the release version")
+    }
+}
+
 signing {
     val signingKey = providers.gradleProperty("signingKey").orNull
     if (signingKey != null) {
@@ -207,7 +207,7 @@ signing {
     sign(publishing.publications["jdbc"])
 }
 
-// The same files as one zip, for an upload by hand in the Central Portal.
+// For a manual upload in the Central Portal.
 val centralBundle by tasks.registering(Zip::class) {
     dependsOn("publishJdbcPublicationToLocalStagingRepository")
     from(layout.buildDirectory.dir("staging-repo")) { include("org/cubrid/cubrid-jdbc/$jdbcVersion/**") }
