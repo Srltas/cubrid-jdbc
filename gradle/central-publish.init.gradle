@@ -1,5 +1,6 @@
-// Loaded only for a Maven Central release (see "Release to Maven Central" in README.md), so other
-// builds, the engine's jdbc_build included, never download this plugin.
+// Loaded only for a Maven Central release, so other builds, the engine's jdbc_build included, never
+// download this plugin:
+//   ./gradlew -I gradle/central-publish.init.gradle publishToSonatype closeSonatypeStagingRepository
 initscript {
     repositories {
         gradlePluginPortal()
