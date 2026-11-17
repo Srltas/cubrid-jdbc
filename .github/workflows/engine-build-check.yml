@@ -68,11 +68,13 @@ jobs:
           git -C cubrid-jdbc log --oneline -1
 
       # One container for the build, the package and the test: the build installs CUBRID inside it.
+      # --init: PID 1 must reap zombies, or `cubrid server stop` hangs (gha-ci checks the same).
       - name: Start a container from ${{ env.IMAGE }}
         working-directory: cubrid
         run: |
-          docker run -d --name ci -e HIDE_ANT=${{ matrix.hide_ant }} -e TEST_SUITE=medium \
+          docker run -d --init --name ci -e HIDE_ANT=${{ matrix.hide_ant }} -e TEST_SUITE=medium \
             -v "$PWD:/home/src" -w /home/src --entrypoint /bin/bash "$IMAGE" -c 'sleep infinity'
+          echo "PID 1: $(docker exec ci ps -p 1 -o comm=)"
           docker exec ci bash -lc '
             git config --global --add safe.directory "*"
             if [ "$HIDE_ANT" = true ] && command -v ant > /dev/null; then
@@ -99,14 +101,16 @@ jobs:
           cat jdbc-files.txt gradle-downloads.txt
 
       # /entrypoint.sh test fails when any case fails; the compare job judges the two failure lists.
+      # The suite takes a few minutes in gha-ci, so an hour means it hangs.
       - name: Run the CTP medium suite
         working-directory: cubrid
+        timeout-minutes: 60
         run: |
-          if docker exec ci bash -lc '/entrypoint.sh test' > medium.log 2>&1; then
-            echo "medium: every case passed"
-          else
-            echo "medium: /entrypoint.sh test exited $?"
-          fi
+          set +e
+          docker exec ci bash -lc '/entrypoint.sh test' 2>&1 | tee medium.log
+          rc=${PIPESTATUS[0]}
+          set -e
+          echo "medium: /entrypoint.sh test exited $rc"
           { grep -E '^\[checkout\]' medium.log || true; } | tee medium-checkout.txt
           # summary_info has a "<case>:ok    <time>ms" or "<case>:nok    <time>ms" line per case.
           docker exec ci bash -lc '
