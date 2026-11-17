@@ -1,11 +1,14 @@
 # APIS-1138 check, run from a fork and not meant to be merged.
 #
 # Builds and packages the engine twice in its CI build image (cubridci/cubridci:develop), the way
-# gha-ci does (/entrypoint.sh build, then dist):
+# gha-ci does (/entrypoint.sh build, then dist), and runs the CTP medium suite on each build
+# (/entrypoint.sh test, the public cubrid-testcases):
 #   ant    - CUBRID/cubrid and CUBRID/cubrid-jdbc at the commits the APIS-1138 branches start from
 #   gradle - the engine's APIS-1138 branch from the fork, and this commit of cubrid-jdbc, with ant
 #            hidden from the build
-# then compares what the two packages ship in jdbc/ and the Gradle dependency downloads they log.
+# then compares what the two packages ship in jdbc/, the Gradle dependency downloads they log, and
+# the medium cases that fail. Both builds are release builds (gha-ci tests a debug one), so the
+# medium failures matter only where the two lists differ.
 name: engine-build-check
 
 # workflow_dispatch would need this file on the default branch: rerun a push from the Actions tab.
@@ -23,7 +26,7 @@ jobs:
   build:
     name: engine build (${{ matrix.leg }})
     runs-on: ubuntu-latest
-    timeout-minutes: 300
+    timeout-minutes: 330
     strategy:
       fail-fast: false
       matrix:
@@ -64,18 +67,20 @@ jobs:
           git log --oneline -1
           git -C cubrid-jdbc log --oneline -1
 
-      - name: Build and package in ${{ env.IMAGE }}
+      # One container for the build, the package and the test: the build installs CUBRID inside it.
+      - name: Start a container from ${{ env.IMAGE }}
         working-directory: cubrid
         run: |
-          docker run --rm -e HIDE_ANT=${{ matrix.hide_ant }} \
-            -v "$PWD:/home/src" -w /home/src --entrypoint /bin/bash "$IMAGE" -lc '
-              set -e
-              git config --global --add safe.directory "*"
-              if [ "$HIDE_ANT" = true ] && command -v ant > /dev/null; then
-                mv "$(command -v ant)" /tmp/ant.hidden
-              fi
-              /entrypoint.sh build
-              /entrypoint.sh dist -z tarball -z jdbc'
+          docker run -d --name ci -e HIDE_ANT=${{ matrix.hide_ant }} -e TEST_SUITE=medium \
+            -v "$PWD:/home/src" -w /home/src --entrypoint /bin/bash "$IMAGE" -c 'sleep infinity'
+          docker exec ci bash -lc '
+            git config --global --add safe.directory "*"
+            if [ "$HIDE_ANT" = true ] && command -v ant > /dev/null; then
+              mv "$(command -v ant)" /tmp/ant.hidden
+            fi'
+
+      - name: Build and package
+        run: docker exec ci bash -lc '/entrypoint.sh build && /entrypoint.sh dist -z tarball -z jdbc'
 
       - name: Collect the jdbc/ files of the package and the Gradle downloads
         working-directory: cubrid
@@ -93,6 +98,31 @@ jobs:
           } > gradle-downloads.txt
           cat jdbc-files.txt gradle-downloads.txt
 
+      # /entrypoint.sh test fails when any case fails; the compare job judges the two failure lists.
+      - name: Run the CTP medium suite
+        working-directory: cubrid
+        run: |
+          if docker exec ci bash -lc '/entrypoint.sh test' > medium.log 2>&1; then
+            echo "medium: every case passed"
+          else
+            echo "medium: /entrypoint.sh test exited $?"
+          fi
+          { grep -E '^\[checkout\]' medium.log || true; } | tee medium-checkout.txt
+          # summary_info has a "<case>:ok    <time>ms" or "<case>:nok    <time>ms" line per case.
+          docker exec ci bash -lc '
+            find /home/cubrid-testtools/CTP/sql/result -type f -name summary_info -exec cat {} + \
+              > /home/src/medium-summary.txt 2> /dev/null || true
+            rm -rf /home/src/medium-xml
+            if [ -d "$TEST_REPORT" ]; then cp -r "$TEST_REPORT" /home/src/medium-xml; fi'
+          { grep -hE ':nok[[:space:]]' medium-summary.txt || true; } | awk -F: '{print $1}' \
+            | sed 's|.*/cubrid-testcases/||' | sort > medium-failed.txt
+          echo "medium: $(grep -cE ':(ok|nok)[[:space:]]' medium-summary.txt || true) results," \
+            "$(grep -c . medium-failed.txt || true) failed"
+
+      - name: Remove the container
+        if: always()
+        run: docker rm -fv ci || true
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -103,6 +133,11 @@ jobs:
             cubrid/jdbc-files.txt
             cubrid/jdbc-jar-entries.txt
             cubrid/gradle-downloads.txt
+            cubrid/medium.log
+            cubrid/medium-checkout.txt
+            cubrid/medium-summary.txt
+            cubrid/medium-failed.txt
+            cubrid/medium-xml/
 
   compare:
     needs: build
@@ -112,7 +147,7 @@ jobs:
         with:
           path: results
 
-      - name: Compare the two packages
+      - name: Compare the two builds
         working-directory: results
         run: |
           # The engine and the driver versions differ between the two builds by their git serials.
@@ -131,5 +166,26 @@ jobs:
             status=1
           else
             echo "none"
+          fi
+          echo "== CTP medium: the test commits each build ran"
+          cat engine-build-ant/medium-checkout.txt engine-build-gradle/medium-checkout.txt
+          commits() { sed -E 's/^\[checkout\] ([^ ]+) @ [^ ]+ -> ([0-9a-f]+).*/\1 \2/' "$1"; }
+          if ! diff <(commits engine-build-ant/medium-checkout.txt) \
+                    <(commits engine-build-gradle/medium-checkout.txt) > /dev/null; then
+            echo "::warning::the two builds ran different test commits, so their failures may differ for that"
+          fi
+          for leg in ant gradle; do
+            echo "$leg: $(grep -cE ':(ok|nok)[[:space:]]' engine-build-$leg/medium-summary.txt || true) results," \
+              "$(grep -c . engine-build-$leg/medium-failed.txt || true) failed"
+            if ! grep -qE ':(ok|nok)[[:space:]]' engine-build-$leg/medium-summary.txt; then
+              echo "::error::the $leg build has no medium result"
+              status=1
+            fi
+          done
+          echo "== CTP medium failures: ant vs gradle"
+          if diff engine-build-ant/medium-failed.txt engine-build-gradle/medium-failed.txt; then
+            echo "same"
+          else
+            status=1
           fi
           exit $status
