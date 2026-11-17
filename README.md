@@ -44,7 +44,7 @@ and the link `cubrid_jdbc.jar`.
 | Command | Does |
 |---|---|
 | `./gradlew buildJdbc` | builds the three jars (version `VERSION` with serial `0000` until CMake has run) |
-| `./gradlew test` | runs the unit tests (`src/test`, classes named `*Test`) |
+| `./gradlew test` | runs the unit tests: every test class in `src/test` but the `*IT` ones |
 | `./gradlew integrationTest` | runs the load-balance ITs against a live cluster, see `src/test/cubrid/jdbc/lb/it/README.md` |
 
 ### CUBRID JDBC Driver 

@@ -130,7 +130,7 @@ tasks.register("buildJdbc") {
 
 tasks.test {
     useJUnit()
-    include("**/*Test.class") // the *IT classes need a live cluster: see integrationTest
+    exclude("**/*IT.class") // the ITs need a live cluster: see integrationTest
 }
 
 // The load-balance ITs, run against a live cluster (src/test/cubrid/jdbc/lb/it/README.md). Every
