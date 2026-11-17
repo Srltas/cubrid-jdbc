@@ -148,7 +148,7 @@ val integrationTest by tasks.registering(Test::class) {
 }
 
 // Maven Central (org.cubrid:cubrid-jdbc). The upload is configured in gradle/central-publish.init.gradle,
-// which only a release loads: see "Release to Maven Central" in README.md.
+// which only a release loads.
 publishing {
     publications {
         create<MavenPublication>("jdbc") {
