@@ -52,6 +52,9 @@ import java.sql.SQLXML;
 import java.sql.Statement;
 import java.sql.Time;
 import java.sql.Timestamp;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Calendar;
@@ -236,8 +239,9 @@ class CUBRIDResultSetWithoutQuery implements ResultSet {
         }
     }
 
+    @Deprecated
     public BigDecimal getBigDecimal(int columnIndex, int scale) throws SQLException {
-        throw new SQLException(new UnsupportedOperationException());
+        throw CUBRIDException.notSupported();
     }
 
     public synchronized byte[] getBytes(int columnIndex) throws SQLException {
@@ -297,8 +301,9 @@ class CUBRIDResultSetWithoutQuery implements ResultSet {
         return stream;
     }
 
+    @Deprecated
     public InputStream getUnicodeStream(int columnIndex) throws SQLException {
-        throw new SQLException(new UnsupportedOperationException());
+        throw CUBRIDException.notSupported();
     }
 
     public synchronized InputStream getBinaryStream(int columnIndex) throws SQLException {
@@ -342,8 +347,9 @@ class CUBRIDResultSetWithoutQuery implements ResultSet {
         return getDouble(findColumn(columnName));
     }
 
+    @Deprecated
     public BigDecimal getBigDecimal(String columnName, int scale) throws SQLException {
-        throw new SQLException(new UnsupportedOperationException());
+        throw CUBRIDException.notSupported();
     }
 
     public synchronized byte[] getBytes(String columnName) throws SQLException {
@@ -366,8 +372,9 @@ class CUBRIDResultSetWithoutQuery implements ResultSet {
         return getAsciiStream(findColumn(columnName));
     }
 
+    @Deprecated
     public InputStream getUnicodeStream(String columnName) throws SQLException {
-        throw new SQLException(new UnsupportedOperationException());
+        throw CUBRIDException.notSupported();
     }
 
     public synchronized InputStream getBinaryStream(String columnName) throws SQLException {
@@ -835,34 +842,64 @@ class CUBRIDResultSetWithoutQuery implements ResultSet {
     }
 
     public synchronized Date getDate(int columnIndex, Calendar cal) throws SQLException {
+        if (cal == null) {
+            return getDate(columnIndex);
+        }
         checkIsOpen();
-        return getDate(columnIndex);
+        beforeGetValue(columnIndex);
+
+        try {
+            return UGetTypeConvertedValue.getDate(
+                    ((Object[]) rows.get(current_row))[columnIndex - 1], cal.getTimeZone());
+        } catch (Exception e) {
+            throw new CUBRIDException(CUBRIDJDBCErrorCode.conversion_error);
+        }
     }
 
     public synchronized Date getDate(String columnName, Calendar cal) throws SQLException {
         checkIsOpen();
-        return getDate(columnName);
+        return getDate(findColumn(columnName), cal);
     }
 
     public synchronized Time getTime(int columnIndex, Calendar cal) throws SQLException {
+        if (cal == null) {
+            return getTime(columnIndex);
+        }
         checkIsOpen();
-        return getTime(columnIndex);
+        beforeGetValue(columnIndex);
+
+        try {
+            return UGetTypeConvertedValue.getTime(
+                    ((Object[]) rows.get(current_row))[columnIndex - 1], cal.getTimeZone());
+        } catch (Exception e) {
+            throw new CUBRIDException(CUBRIDJDBCErrorCode.conversion_error);
+        }
     }
 
     public synchronized Time getTime(String columnName, Calendar cal) throws SQLException {
         checkIsOpen();
-        return getTime(columnName);
+        return getTime(findColumn(columnName), cal);
     }
 
     public synchronized Timestamp getTimestamp(int columnIndex, Calendar cal) throws SQLException {
+        if (cal == null) {
+            return getTimestamp(columnIndex);
+        }
         checkIsOpen();
-        return getTimestamp(columnIndex);
+        beforeGetValue(columnIndex);
+
+        try {
+            return UGetTypeConvertedValue.getTimestamp(
+                    ((Object[]) rows.get(current_row))[columnIndex - 1], cal.getTimeZone());
+        } catch (Exception e) {
+            throw new CUBRIDException(CUBRIDJDBCErrorCode.conversion_error);
+        }
     }
 
     public synchronized Timestamp getTimestamp(String columnName, Calendar cal)
             throws SQLException {
         checkIsOpen();
-        return getTimestamp(columnName);
+        return getTimestamp(findColumn(columnName), cal);
     }
 
     // 3.0
@@ -966,57 +1003,57 @@ class CUBRIDResultSetWithoutQuery implements ResultSet {
 
     /* JDK 1.6 */
     public int getHoldability() throws SQLException {
-        throw new SQLException(new java.lang.UnsupportedOperationException());
+        throw CUBRIDException.notSupported();
     }
 
     /* JDK 1.6 */
     public Reader getNCharacterStream(int columnIndex) throws SQLException {
-        throw new SQLException(new java.lang.UnsupportedOperationException());
+        throw CUBRIDException.notSupported();
     }
 
     /* JDK 1.6 */
     public Reader getNCharacterStream(String columnLabel) throws SQLException {
-        throw new SQLException(new java.lang.UnsupportedOperationException());
+        throw CUBRIDException.notSupported();
     }
 
     /* JDK 1.6 */
     public NClob getNClob(int columnIndex) throws SQLException {
-        throw new SQLException(new java.lang.UnsupportedOperationException());
+        throw CUBRIDException.notSupported();
     }
 
     /* JDK 1.6 */
     public NClob getNClob(String columnLabel) throws SQLException {
-        throw new SQLException(new java.lang.UnsupportedOperationException());
+        throw CUBRIDException.notSupported();
     }
 
     /* JDK 1.6 */
     public String getNString(int columnIndex) throws SQLException {
-        throw new SQLException(new java.lang.UnsupportedOperationException());
+        throw CUBRIDException.notSupported();
     }
 
     /* JDK 1.6 */
     public String getNString(String columnLabel) throws SQLException {
-        throw new SQLException(new java.lang.UnsupportedOperationException());
+        throw CUBRIDException.notSupported();
     }
 
     /* JDK 1.6 */
     public RowId getRowId(int columnIndex) throws SQLException {
-        throw new SQLException(new java.lang.UnsupportedOperationException());
+        throw CUBRIDException.notSupported();
     }
 
     /* JDK 1.6 */
     public RowId getRowId(String columnLabel) throws SQLException {
-        throw new SQLException(new java.lang.UnsupportedOperationException());
+        throw CUBRIDException.notSupported();
     }
 
     /* JDK 1.6 */
     public SQLXML getSQLXML(int columnIndex) throws SQLException {
-        throw new SQLException(new java.lang.UnsupportedOperationException());
+        throw CUBRIDException.notSupported();
     }
 
     /* JDK 1.6 */
     public SQLXML getSQLXML(String columnLabel) throws SQLException {
-        throw new SQLException(new java.lang.UnsupportedOperationException());
+        throw CUBRIDException.notSupported();
     }
 
     /* JDK 1.6 */
@@ -1026,208 +1063,325 @@ class CUBRIDResultSetWithoutQuery implements ResultSet {
 
     /* JDK 1.6 */
     public void updateAsciiStream(int columnIndex, InputStream x) throws SQLException {
-        throw new SQLException(new java.lang.UnsupportedOperationException());
+        throw CUBRIDException.notSupported();
     }
 
     /* JDK 1.6 */
     public void updateAsciiStream(String columnLabel, InputStream x) throws SQLException {
-        throw new SQLException(new java.lang.UnsupportedOperationException());
+        throw CUBRIDException.notSupported();
     }
 
     /* JDK 1.6 */
     public void updateAsciiStream(int columnIndex, InputStream x, long length) throws SQLException {
-        throw new SQLException(new java.lang.UnsupportedOperationException());
+        throw CUBRIDException.notSupported();
     }
 
     /* JDK 1.6 */
     public void updateAsciiStream(String columnLabel, InputStream x, long length)
             throws SQLException {
-        throw new SQLException(new java.lang.UnsupportedOperationException());
+        throw CUBRIDException.notSupported();
     }
 
     /* JDK 1.6 */
     public void updateBinaryStream(int columnIndex, InputStream x) throws SQLException {
-        throw new SQLException(new java.lang.UnsupportedOperationException());
+        throw CUBRIDException.notSupported();
     }
 
     /* JDK 1.6 */
     public void updateBinaryStream(String columnLabel, InputStream x) throws SQLException {
-        throw new SQLException(new java.lang.UnsupportedOperationException());
+        throw CUBRIDException.notSupported();
     }
 
     /* JDK 1.6 */
     public void updateBinaryStream(int columnIndex, InputStream x, long length)
             throws SQLException {
-        throw new SQLException(new java.lang.UnsupportedOperationException());
+        throw CUBRIDException.notSupported();
     }
 
     /* JDK 1.6 */
     public void updateBinaryStream(String columnLabel, InputStream x, long length)
             throws SQLException {
-        throw new SQLException(new java.lang.UnsupportedOperationException());
+        throw CUBRIDException.notSupported();
     }
 
     /* JDK 1.6 */
     public void updateBlob(int columnIndex, InputStream inputStream) throws SQLException {
-        throw new SQLException(new java.lang.UnsupportedOperationException());
+        throw CUBRIDException.notSupported();
     }
 
     /* JDK 1.6 */
     public void updateBlob(String columnLabel, InputStream inputStream) throws SQLException {
-        throw new SQLException(new java.lang.UnsupportedOperationException());
+        throw CUBRIDException.notSupported();
     }
 
     /* JDK 1.6 */
     public void updateBlob(int columnIndex, InputStream inputStream, long length)
             throws SQLException {
-        throw new SQLException(new java.lang.UnsupportedOperationException());
+        throw CUBRIDException.notSupported();
     }
 
     /* JDK 1.6 */
     public void updateBlob(String columnLabel, InputStream inputStream, long length)
             throws SQLException {
-        throw new SQLException(new java.lang.UnsupportedOperationException());
+        throw CUBRIDException.notSupported();
     }
 
     /* JDK 1.6 */
     public void updateCharacterStream(int columnIndex, Reader x) throws SQLException {
-        throw new SQLException(new java.lang.UnsupportedOperationException());
+        throw CUBRIDException.notSupported();
     }
 
     /* JDK 1.6 */
     public void updateCharacterStream(String columnLabel, Reader reader) throws SQLException {
-        throw new SQLException(new java.lang.UnsupportedOperationException());
+        throw CUBRIDException.notSupported();
     }
 
     /* JDK 1.6 */
     public void updateCharacterStream(int columnIndex, Reader x, long length) throws SQLException {
-        throw new SQLException(new java.lang.UnsupportedOperationException());
+        throw CUBRIDException.notSupported();
     }
 
     /* JDK 1.6 */
     public void updateCharacterStream(String columnLabel, Reader reader, long length)
             throws SQLException {
-        throw new SQLException(new java.lang.UnsupportedOperationException());
+        throw CUBRIDException.notSupported();
     }
 
     /* JDK 1.6 */
     public void updateClob(int columnIndex, Reader reader) throws SQLException {
-        throw new SQLException(new java.lang.UnsupportedOperationException());
+        throw CUBRIDException.notSupported();
     }
 
     /* JDK 1.6 */
     public void updateClob(String columnLabel, Reader reader) throws SQLException {
-        throw new SQLException(new java.lang.UnsupportedOperationException());
+        throw CUBRIDException.notSupported();
     }
 
     /* JDK 1.6 */
     public void updateClob(int columnIndex, Reader reader, long length) throws SQLException {
-        throw new SQLException(new java.lang.UnsupportedOperationException());
+        throw CUBRIDException.notSupported();
     }
 
     /* JDK 1.6 */
     public void updateClob(String columnLabel, Reader reader, long length) throws SQLException {
-        throw new SQLException(new java.lang.UnsupportedOperationException());
+        throw CUBRIDException.notSupported();
     }
 
     /* JDK 1.6 */
     public void updateNCharacterStream(int columnIndex, Reader x) throws SQLException {
-        throw new SQLException(new java.lang.UnsupportedOperationException());
+        throw CUBRIDException.notSupported();
     }
 
     /* JDK 1.6 */
     public void updateNCharacterStream(String columnLabel, Reader reader) throws SQLException {
-        throw new SQLException(new java.lang.UnsupportedOperationException());
+        throw CUBRIDException.notSupported();
     }
 
     /* JDK 1.6 */
     public void updateNCharacterStream(int columnIndex, Reader x, long length) throws SQLException {
-        throw new SQLException(new java.lang.UnsupportedOperationException());
+        throw CUBRIDException.notSupported();
     }
 
     /* JDK 1.6 */
     public void updateNCharacterStream(String columnLabel, Reader reader, long length)
             throws SQLException {
-        throw new SQLException(new java.lang.UnsupportedOperationException());
+        throw CUBRIDException.notSupported();
     }
 
     /* JDK 1.6 */
     public void updateNClob(int columnIndex, NClob clob) throws SQLException {
-        throw new SQLException(new java.lang.UnsupportedOperationException());
+        throw CUBRIDException.notSupported();
     }
 
     /* JDK 1.6 */
     public void updateNClob(String columnLabel, NClob clob) throws SQLException {
-        throw new SQLException(new java.lang.UnsupportedOperationException());
+        throw CUBRIDException.notSupported();
     }
 
     /* JDK 1.6 */
     public void updateNClob(int columnIndex, Reader reader) throws SQLException {
-        throw new SQLException(new java.lang.UnsupportedOperationException());
+        throw CUBRIDException.notSupported();
     }
 
     /* JDK 1.6 */
     public void updateNClob(String columnLabel, Reader reader) throws SQLException {
-        throw new SQLException(new java.lang.UnsupportedOperationException());
+        throw CUBRIDException.notSupported();
     }
 
     /* JDK 1.6 */
     public void updateNClob(int columnIndex, Reader reader, long length) throws SQLException {
-        throw new SQLException(new java.lang.UnsupportedOperationException());
+        throw CUBRIDException.notSupported();
     }
 
     /* JDK 1.6 */
     public void updateNClob(String columnLabel, Reader reader, long length) throws SQLException {
-        throw new SQLException(new java.lang.UnsupportedOperationException());
+        throw CUBRIDException.notSupported();
     }
 
     /* JDK 1.6 */
     public void updateNString(int columnIndex, String string) throws SQLException {
-        throw new SQLException(new java.lang.UnsupportedOperationException());
+        throw CUBRIDException.notSupported();
     }
 
     /* JDK 1.6 */
     public void updateNString(String columnLabel, String string) throws SQLException {
-        throw new SQLException(new java.lang.UnsupportedOperationException());
+        throw CUBRIDException.notSupported();
     }
 
     /* JDK 1.6 */
     public void updateRowId(int columnIndex, RowId x) throws SQLException {
-        throw new SQLException(new java.lang.UnsupportedOperationException());
+        throw CUBRIDException.notSupported();
     }
 
     /* JDK 1.6 */
     public void updateRowId(String columnLabel, RowId x) throws SQLException {
-        throw new SQLException(new java.lang.UnsupportedOperationException());
+        throw CUBRIDException.notSupported();
     }
 
     /* JDK 1.6 */
     public void updateSQLXML(int columnIndex, SQLXML xmlObject) throws SQLException {
-        throw new SQLException(new java.lang.UnsupportedOperationException());
+        throw CUBRIDException.notSupported();
     }
 
     /* JDK 1.6 */
     public void updateSQLXML(String columnLabel, SQLXML xmlObject) throws SQLException {
-        throw new SQLException(new java.lang.UnsupportedOperationException());
+        throw CUBRIDException.notSupported();
     }
 
     /* JDK 1.6 */
+    @Override
     public boolean isWrapperFor(Class<?> iface) throws SQLException {
-        throw new SQLException(new java.lang.UnsupportedOperationException());
+        checkIsOpen();
+        return iface.isAssignableFrom(getClass());
     }
 
     /* JDK 1.6 */
+    @Override
     public <T> T unwrap(Class<T> iface) throws SQLException {
-        throw new SQLException(new java.lang.UnsupportedOperationException());
+        checkIsOpen();
+        if (iface.isAssignableFrom(getClass())) {
+            return iface.cast(this);
+        }
+        throw new CUBRIDException(
+                CUBRIDJDBCErrorCode.invalid_value,
+                CUBRIDException.cannotUnwrapMessage(iface),
+                null);
     }
 
     /* JDK 1.7 */
-    public <T> T getObject(int columnIndex, Class<T> type) throws SQLException {
-        throw new SQLException(new java.lang.UnsupportedOperationException());
+    public synchronized <T> T getObject(int columnIndex, Class<T> type) throws SQLException {
+        checkIsOpen();
+        if (type == null) {
+            throw new CUBRIDException(
+                    CUBRIDJDBCErrorCode.invalid_value, CUBRIDException.nullTypeMessage(), null);
+        }
+
+        if (type == String.class) {
+            return type.cast(getString(columnIndex));
+        }
+        if (type == BigDecimal.class) {
+            return type.cast(getBigDecimal(columnIndex));
+        }
+        if (type == byte[].class) {
+            return type.cast(getBytes(columnIndex));
+        }
+        if (type == Date.class) {
+            return type.cast(getDate(columnIndex));
+        }
+        if (type == Time.class) {
+            return type.cast(getTime(columnIndex));
+        }
+        if (type == Timestamp.class) {
+            return type.cast(getTimestamp(columnIndex));
+        }
+
+        if (type == Boolean.class) {
+            boolean value = getBoolean(columnIndex);
+            return wasNull() ? null : type.cast(value);
+        }
+        if (type == Byte.class) {
+            byte value = getByte(columnIndex);
+            return wasNull() ? null : type.cast(value);
+        }
+        if (type == Short.class) {
+            short value = getShort(columnIndex);
+            return wasNull() ? null : type.cast(value);
+        }
+        if (type == Integer.class) {
+            int value = getInt(columnIndex);
+            return wasNull() ? null : type.cast(value);
+        }
+        if (type == Long.class) {
+            long value = getLong(columnIndex);
+            return wasNull() ? null : type.cast(value);
+        }
+        if (type == Float.class) {
+            float value = getFloat(columnIndex);
+            return wasNull() ? null : type.cast(value);
+        }
+        if (type == Double.class) {
+            double value = getDouble(columnIndex);
+            return wasNull() ? null : type.cast(value);
+        }
+
+        if (type == LocalDate.class) {
+            return type.cast(getLocalDate(columnIndex));
+        }
+        if (type == LocalTime.class) {
+            return type.cast(getLocalTime(columnIndex));
+        }
+        if (type == LocalDateTime.class) {
+            return type.cast(getLocalDateTime(columnIndex));
+        }
+
+        throw new CUBRIDException(
+                CUBRIDJDBCErrorCode.invalid_value,
+                CUBRIDException.cannotConvertMessage(type),
+                null);
     }
 
     /* JDK 1.7 */
-    public <T> T getObject(String columnLabel, Class<T> type) throws SQLException {
-        throw new SQLException(new java.lang.UnsupportedOperationException());
+    public synchronized <T> T getObject(String columnLabel, Class<T> type) throws SQLException {
+        return getObject(findColumn(columnLabel), type);
+    }
+
+    /*
+     * The rows of this ResultSet are built in the driver, not decoded from the wire, so there are
+     * no wire fields to read the way CUBRIDResultSet does. Going through the java.sql value is
+     * faithful here: the value was made in this JVM's zone to begin with, so no zone is applied
+     * a second time.
+     */
+    private LocalDate getLocalDate(int columnIndex) throws SQLException {
+        checkJavaTimeColumn(columnIndex, LocalDate.class);
+
+        Date value = getDate(columnIndex);
+        return value == null ? null : value.toLocalDate();
+    }
+
+    private LocalTime getLocalTime(int columnIndex) throws SQLException {
+        checkJavaTimeColumn(columnIndex, LocalTime.class);
+
+        Time value = getTime(columnIndex);
+        return value == null ? null : value.toLocalTime();
+    }
+
+    private LocalDateTime getLocalDateTime(int columnIndex) throws SQLException {
+        checkJavaTimeColumn(columnIndex, LocalDateTime.class);
+
+        Timestamp value = getTimestamp(columnIndex);
+        return value == null ? null : value.toLocalDateTime();
+    }
+
+    private void checkJavaTimeColumn(int columnIndex, Class<?> type) throws SQLException {
+        beforeGetValue(columnIndex);
+
+        if (JavaTimeRules.canRead((byte) this.type[columnIndex - 1], type)) {
+            return;
+        }
+
+        throw new CUBRIDException(
+                CUBRIDJDBCErrorCode.invalid_value,
+                CUBRIDException.cannotConvertMessage(type),
+                null);
     }
 }

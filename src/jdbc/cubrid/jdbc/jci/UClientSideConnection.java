@@ -48,6 +48,8 @@ import cubrid.jdbc.net.BrokerHandler;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.net.SocketTimeoutException;
+import java.security.KeyStore;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.StringTokenizer;
 
@@ -102,7 +104,11 @@ public class UClientSideConnection extends UConnection {
     }
 
     public void tryConnect() throws CUBRIDException {
-        initLogger();
+        /* Resolve the trust anchors here: an unreadable sslca/trustStore is a configuration error
+         * and reaches the application as invalid_url only from this method. The connect paths below
+         * can report jci codes only, and ConnectionProperties keeps the result, so this reads the
+         * file once per connection. */
+        connectionProperties.getTrustStore();
         try {
             if (connectionProperties.getUseLazyConnection()) {
                 needReconnection = true;
@@ -175,6 +181,10 @@ public class UClientSideConnection extends UConnection {
         super.checkReconnect();
 
         if (getCASInfoStatus() == CAS_INFO_STATUS_INACTIVE && check_cas() == false) {
+            /* A network timeout in check_cas() closed the connection; do not reconnect. */
+            if (isClosed) {
+                throw createJciException(UErrorCode.ER_NETWORK_TIMEOUT);
+            }
             clientSocketClose();
         }
 
@@ -199,8 +209,7 @@ public class UClientSideConnection extends UConnection {
         } else {
             int retry = 0;
             UUnreachableHostList unreachableHosts = UUnreachableHostList.getInstance();
-            boolean useSSL = connectionProperties.getUseSSL();
-            unreachableHosts.setUseSSL(useSSL);
+            unreachableHosts.setSslConfig(connectionProperties.getSslMode(), sslTrustStore());
 
             do {
                 for (int hostId = 0; hostId < altHosts.size(); hostId++) {
@@ -251,16 +260,32 @@ public class UClientSideConnection extends UConnection {
         return timestamp + (timeout * 1000);
     }
 
+    /**
+     * The anchors resolved by {@link #tryConnect()}. Re-asking is cheap - the result is kept on the
+     * properties - and a configuration error that somehow reaches here must still stop the connect
+     * rather than fall back to the JVM default store.
+     */
+    private KeyStore sslTrustStore() throws UJciException {
+        try {
+            return connectionProperties.getTrustStore();
+        } catch (SQLException e) {
+            throw new UJciException(UErrorCode.ER_CONNECTION, e);
+        }
+    }
+
     private void reconnectWorker(long endTimestamp) throws IOException, UJciException {
         if (UJCIUtil.isConsoleDebug()) {
             CUBRIDDriver.printDebug(String.format("Try Connect (%s,%d)", casIp, casPort));
         }
 
         int timeout = connectionProperties.getConnectTimeout() * 1000;
-        boolean useSSL = connectionProperties.getUseSSL();
         client =
                 BrokerHandler.connectBroker(
-                        casIp, casPort, useSSL, getTimeout(endTimestamp, timeout));
+                        casIp,
+                        casPort,
+                        connectionProperties.getSslMode(),
+                        sslTrustStore(),
+                        getTimeout(endTimestamp, timeout));
         output = new DataOutputStream(client.getOutputStream());
         connectDB(getTimeout(endTimestamp, timeout));
 
@@ -269,7 +294,7 @@ public class UClientSideConnection extends UConnection {
                         client.getInputStream(), casIp, casPort, casProcessId, sessionId, timeout);
 
         client.setTcpNoDelay(true);
-        client.setSoTimeout(SOCKET_TIMEOUT);
+        client.setSoTimeout(socketTimeout(getNetworkTimeout()));
         needReconnection = false;
         isClosed = false;
 
@@ -423,37 +448,19 @@ public class UClientSideConnection extends UConnection {
 
         /* synchronize with broker_info */
         byte version = brokerInfo[BROKER_INFO_PROTO_VERSION];
-        if ((version & CAS_PROTO_INDICATOR) == CAS_PROTO_INDICATOR) {
-            brokerVersion = makeProtoVersion(version & CAS_PROTO_VER_MASK);
-        } else {
-            brokerVersion =
-                    makeBrokerVersion(
-                            (int) brokerInfo[BROKER_INFO_MAJOR_VERSION],
-                            (int) brokerInfo[BROKER_INFO_MINOR_VERSION],
-                            (int) brokerInfo[BROKER_INFO_PATCH_VERSION]);
-        }
-
         protocolVersion = (int) version & CAS_PROTO_VER_MASK;
 
-        if (protoVersionIsAbove(PROTOCOL_V4)) {
-            casId = is.readInt();
-        } else {
-            casId = -1;
+        /* The driver only supports servers using PROTOCOL_V8 or later. */
+        if (protocolVersion < PROTOCOL_V8) {
+            throw new UJciException(UErrorCode.ER_NOT_SUPPORTED_PROTOCOL);
         }
 
-        if (protoVersionIsAbove(PROTOCOL_V3)) {
-            is.readFully(sessionId);
-        } else {
-            oldSessionId = is.readInt();
-        }
+        casId = is.readInt();
 
-        if (protoVersionIsAbove(PROTOCOL_V7)) {
-            setIsolationLevelMin(CUBRIDIsolationLevel.TRAN_READ_COMMITTED);
-            setIsolationLevelMax(CUBRIDIsolationLevel.TRAN_SERIALIZABLE);
-        } else {
-            setIsolationLevelMin(CUBRIDIsolationLevel.TRAN_COMMIT_CLASS_UNCOMMIT_INSTANCE);
-            setIsolationLevelMax(CUBRIDIsolationLevel.TRAN_SERIALIZABLE);
-        }
+        is.readFully(sessionId);
+
+        setIsolationLevelMin(CUBRIDIsolationLevel.TRAN_READ_COMMITTED);
+        setIsolationLevelMax(CUBRIDIsolationLevel.TRAN_SERIALIZABLE);
     }
 
     private boolean setActiveHost(int hostId) throws UJciException {

@@ -55,10 +55,15 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Time;
 import java.sql.Timestamp;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.TimeZone;
 
-public class UStatement {
+public class UStatement implements AutoCloseable {
     public static final int CURSOR_SET = 0, CURSOR_CUR = 1, CURSOR_END = 2;
 
     public static final byte QUERY_INFO_PLAN = 0x01;
@@ -308,7 +313,7 @@ public class UStatement {
         UInputBuffer inBuffer;
         synchronized (u_con) {
             outBuffer.newRequest(UFunctionCode.MAKE_OUT_RS);
-            if (UConnection.protoVersionIsLower(UConnection.PROTOCOL_V11)) {
+            if (u_con.brokerProtocolVersion() < UConnection.PROTOCOL_V11) {
                 outBuffer.addInt((int) id);
             } else {
                 outBuffer.addLong(id);
@@ -435,6 +440,22 @@ public class UStatement {
         bindValue(index, UUType.U_TYPE_VARBIT, data);
     }
 
+    public void bind(int index, LocalDate value) {
+        bindValue(index, UUType.U_TYPE_DATE, value);
+    }
+
+    public void bind(int index, LocalTime value) {
+        bindValue(index, UUType.U_TYPE_TIME, value);
+    }
+
+    public void bind(int index, LocalDateTime value) {
+        bindValue(index, UUType.U_TYPE_DATETIME, value);
+    }
+
+    public void bind(int index, OffsetDateTime value) {
+        bindValue(index, UUType.U_TYPE_DATETIMETZ, value);
+    }
+
     public void bind(int index, Date value) {
         bindValue(index, UUType.U_TYPE_DATE, value);
     }
@@ -444,15 +465,32 @@ public class UStatement {
     }
 
     public void bind(int index, Timestamp value) {
-        byte type = UUType.getObjectDBtype(value);
+        byte type = value == null ? UUType.U_TYPE_DATETIME : UUType.getObjectDBtype(value);
 
         bindValue(index, type, value);
     }
 
     public void bind(int index, CUBRIDTimestamptz value) {
-        byte type = UUType.getObjectDBtype(value);
+        byte type = value == null ? UUType.U_TYPE_DATETIMETZ : UUType.getObjectDBtype(value);
 
         bindValue(index, type, value);
+    }
+
+    public void bind(int index, Date value, TimeZone zone) {
+        bindValue(index, UUType.U_TYPE_DATE, UDateTimeFields.of(value, UUType.U_TYPE_DATE, zone));
+    }
+
+    public void bind(int index, Time value, TimeZone zone) {
+        bindValue(index, UUType.U_TYPE_TIME, UDateTimeFields.of(value, UUType.U_TYPE_TIME, zone));
+    }
+
+    public void bind(int index, Timestamp value, TimeZone zone) {
+        if (value instanceof CUBRIDTimestamptz) {
+            bind(index, value);
+            return;
+        }
+        byte type = UUType.getObjectDBtype(value);
+        bindValue(index, type, UDateTimeFields.of(value, type, zone));
     }
 
     public void bind(int index, Object value) {
@@ -544,6 +582,14 @@ public class UStatement {
 
     public void bindNull(int index) {
         bindValue(index, UUType.U_TYPE_NULL, null);
+    }
+
+    public void bindNull(int index, int sqlType) {
+        bindValue(index, UUType.getNullTypeOfSqlType(sqlType), null);
+    }
+
+    private boolean sendsTypedNull() {
+        return relatedConnection.brokerProtocolVersion() >= UConnection.PROTOCOL_V13;
     }
 
     public UError cancel() {
@@ -670,9 +716,6 @@ public class UStatement {
 
         try {
             UFunctionCode code = UFunctionCode.CURSOR_CLOSE;
-            if (relatedConnection.protoVersionIsSame(UConnection.PROTOCOL_V2)) {
-                code = UFunctionCode.CURSOR_CLOSE_FOR_PROTOCOL_V2;
-            }
             outBuffer.newRequest(code);
             outBuffer.addInt(serverHandler);
             relatedConnection.send_recv_msg();
@@ -781,38 +824,29 @@ public class UStatement {
         outBuffer.addByte(is_forward_only);
         outBuffer.addCacheTime(cacheData);
 
-        // query timeout support only if protocol version 1 or above
-        if (relatedConnection.protoVersionIsAbove(UConnection.PROTOCOL_V2)) {
-            // send queryTimeout in milliseconds
-            remainingTime = relatedConnection.getRemainingTime(queryTimeout * 1000);
-        } else if (relatedConnection.protoVersionIsAbove(UConnection.PROTOCOL_V1)) {
-            // send queryTimeout in seconds
-            remainingTime = relatedConnection.getRemainingTime(queryTimeout * 1000);
-            remainingTime = (long) Math.ceil(remainingTime / 1000.0);
-        }
+        // send queryTimeout in milliseconds
+        remainingTime = relatedConnection.getRemainingTime(queryTimeout * 1000);
         if (queryTimeout > 0 && remainingTime <= 0) {
             throw relatedConnection.createJciException(UErrorCode.ER_TIMEOUT);
         }
         outBuffer.addInt((int) remainingTime);
 
         if (bindParameter != null) {
-            bindParameter.writeParameter(outBuffer);
+            bindParameter.writeParameter(outBuffer, sendsTypedNull());
         }
     }
 
     private void readResultMeta(UInputBuffer inBuffer) throws UJciException {
-        if (relatedConnection.protoVersionIsAbove(UConnection.PROTOCOL_V2)) {
-            // include_column_info
-            if (inBuffer.readByte() == 1) {
-                inBuffer.readInt(); // result_cache_lifetime
-                commandTypeIs = inBuffer.readByte();
-                inBuffer.readInt(); // num_markers
-                isUpdatable = (inBuffer.readByte() == 1) ? true : false;
-                columnNumber = inBuffer.readInt();
-                readColumnInfo(inBuffer);
-                if (commandTypeIs == CUBRIDCommandType.CUBRID_STMT_CALL_SP) {
-                    columnNumber = parameterNumber + 1;
-                }
+        // include_column_info
+        if (inBuffer.readByte() == 1) {
+            inBuffer.readInt(); // result_cache_lifetime
+            commandTypeIs = inBuffer.readByte();
+            inBuffer.readInt(); // num_markers
+            isUpdatable = (inBuffer.readByte() == 1) ? true : false;
+            columnNumber = inBuffer.readInt();
+            readColumnInfo(inBuffer);
+            if (commandTypeIs == CUBRIDCommandType.CUBRID_STMT_CALL_SP) {
+                columnNumber = parameterNumber + 1;
             }
         }
     }
@@ -882,9 +916,7 @@ public class UStatement {
         readResultInfo(inBuffer);
         readResultMeta(inBuffer);
 
-        if (relatedConnection.protoVersionIsAbove(UConnection.PROTOCOL_V5)) {
-            relatedConnection.setShardId(inBuffer.readInt());
-        }
+        relatedConnection.setShardId(inBuffer.readInt());
 
         fetchResultData(inBuffer, cacheData);
 
@@ -983,13 +1015,8 @@ public class UStatement {
             }
         }
 
-        if (relatedConnection.protoVersionIsAbove(UConnection.PROTOCOL_V7)) {
-            loop = false; /* retry once more */
-            additional_prepare_flag = UConnection.PREPARE_XASL_CACHE_PINNED;
-        } else {
-            loop = true; /* infinitely */
-            additional_prepare_flag = (byte) 0;
-        }
+        loop = false; /* retry once more */
+        additional_prepare_flag = UConnection.PREPARE_XASL_CACHE_PINNED;
 
         do {
             if (relatedConnection.brokerInfoStatementPooling()
@@ -1057,20 +1084,18 @@ public class UStatement {
         outBuffer.newRequest(
                 relatedConnection.getOutputStream(), UFunctionCode.EXECUTE_BATCH_PREPAREDSTATEMENT);
         outBuffer.addInt(serverHandler);
-        if (relatedConnection.protoVersionIsAbove(UConnection.PROTOCOL_V4)) {
-            long remainingTime = relatedConnection.getRemainingTime(queryTimeout * 1000);
-            if (queryTimeout > 0 && remainingTime <= 0) {
-                throw relatedConnection.createJciException(UErrorCode.ER_TIMEOUT);
-            }
-            outBuffer.addInt((int) remainingTime);
+        long remainingTime = relatedConnection.getRemainingTime(queryTimeout * 1000);
+        if (queryTimeout > 0 && remainingTime <= 0) {
+            throw relatedConnection.createJciException(UErrorCode.ER_TIMEOUT);
         }
+        outBuffer.addInt((int) remainingTime);
         outBuffer.addByte(isAutoCommit ? (byte) 1 : (byte) 0);
 
         if (batchParameter != null) {
             synchronized (batchParameter) {
                 for (int i = 0; i < batchParameter.size(); i++) {
                     UBindParameter b = (UBindParameter) batchParameter.get(i);
-                    b.writeParameter(outBuffer);
+                    b.writeParameter(outBuffer, sendsTypedNull());
                 }
             }
         }
@@ -1109,9 +1134,7 @@ public class UStatement {
             }
         }
 
-        if (relatedConnection.protoVersionIsAbove(UConnection.PROTOCOL_V5)) {
-            relatedConnection.setShardId(inBuffer.readInt());
-        }
+        relatedConnection.setShardId(inBuffer.readInt());
 
         return batchResult;
     }
@@ -1172,13 +1195,8 @@ public class UStatement {
             }
         }
 
-        if (relatedConnection.protoVersionIsAbove(UConnection.PROTOCOL_V7)) {
-            loop = false; /* retry once more */
-            additional_prepare_flag = UConnection.PREPARE_XASL_CACHE_PINNED;
-        } else {
-            loop = true; /* infinitely */
-            additional_prepare_flag = (byte) 0;
-        }
+        loop = false; /* retry once more */
+        additional_prepare_flag = UConnection.PREPARE_XASL_CACHE_PINNED;
 
         do {
             if (relatedConnection.brokerInfoStatementPooling()
@@ -1374,6 +1392,88 @@ public class UStatement {
         } catch (UJciException e) {
             e.toUError(errorHandler);
         }
+        return null;
+    }
+
+    public synchronized LocalDate getLocalDate(int index) {
+        UDateTimeFields fields = dateTimeFieldsOf(index, UDateTimeFields.class);
+        if (fields == null) return null;
+
+        try {
+            return fields.toLocalDate();
+        } catch (UJciException e) {
+            e.toUError(errorHandler);
+        }
+        return null;
+    }
+
+    public synchronized LocalTime getLocalTime(int index) {
+        UDateTimeFields fields = dateTimeFieldsOf(index, UDateTimeFields.class);
+        if (fields == null) return null;
+
+        try {
+            return fields.toLocalTime();
+        } catch (UJciException e) {
+            e.toUError(errorHandler);
+        }
+        return null;
+    }
+
+    public synchronized LocalDateTime getLocalDateTime(int index) {
+        UDateTimeFields fields = dateTimeFieldsOf(index, UDateTimeFields.class);
+        if (fields == null) return null;
+
+        try {
+            return fields.toLocalDateTime();
+        } catch (UJciException e) {
+            e.toUError(errorHandler);
+        }
+        return null;
+    }
+
+    public synchronized OffsetDateTime getOffsetDateTime(int index) {
+        UDateTimeTzFields fields = dateTimeFieldsOf(index, UDateTimeTzFields.class);
+        if (fields == null) return null;
+
+        try {
+            return fields.toOffsetDateTime();
+        } catch (UJciException e) {
+            e.toUError(errorHandler);
+        }
+        return null;
+    }
+
+    private <T extends UDateTimeValue> T dateTimeFieldsOf(int index, Class<T> type) {
+        errorHandler = new UError(relatedConnection);
+
+        if (isClosed == true) {
+            errorHandler.setErrorCode(UErrorCode.ER_IS_CLOSED);
+            return null;
+        }
+        if (index < 0 || index >= columnNumber) {
+            errorHandler.setErrorCode(UErrorCode.ER_COLUMN_INDEX);
+            return null;
+        }
+        if (checkReFetch() != true) return null;
+        if (fetchedTupleNumber <= 0) {
+            errorHandler.setErrorCode(UErrorCode.ER_NO_MORE_DATA);
+            return null;
+        }
+
+        Object obj;
+        if ((tuples == null)
+                || (tuples[cursorPosition - currentFirstCursor] == null)
+                || ((obj = tuples[cursorPosition - currentFirstCursor].getAttribute(index))
+                        == null)) {
+            errorHandler.setErrorCode(UErrorCode.ER_WAS_NULL);
+            return null;
+        }
+
+        if (type.isInstance(obj)) {
+            return type.cast(obj);
+        }
+
+        errorHandler.setErrorCode(UErrorCode.ER_TYPE_CONVERSION);
         return null;
     }
 
@@ -1618,6 +1718,48 @@ public class UStatement {
 
         try {
             return (UGetTypeConvertedValue.getTimestamp(obj));
+        } catch (UJciException e) {
+            e.toUError(errorHandler);
+        }
+        return null;
+    }
+
+    public synchronized Date getDate(int index, TimeZone zone) {
+        errorHandler = new UError(relatedConnection);
+
+        Object obj = beforeGetRaw(index);
+        if (obj == null) return null;
+
+        try {
+            return (UGetTypeConvertedValue.getDate(obj, zone));
+        } catch (UJciException e) {
+            e.toUError(errorHandler);
+        }
+        return null;
+    }
+
+    public synchronized Time getTime(int index, TimeZone zone) {
+        errorHandler = new UError(relatedConnection);
+
+        Object obj = beforeGetRaw(index);
+        if (obj == null) return null;
+
+        try {
+            return (UGetTypeConvertedValue.getTime(obj, zone));
+        } catch (UJciException e) {
+            e.toUError(errorHandler);
+        }
+        return null;
+    }
+
+    public synchronized Timestamp getTimestamp(int index, TimeZone zone) {
+        errorHandler = new UError(relatedConnection);
+
+        Object obj = beforeGetRaw(index);
+        if (obj == null) return null;
+
+        try {
+            return (UGetTypeConvertedValue.getTimestamp(obj, zone));
         } catch (UJciException e) {
             e.toUError(errorHandler);
         }
@@ -2033,6 +2175,11 @@ public class UStatement {
     }
 
     private Object beforeGetXXX(int index) {
+        Object obj = beforeGetRaw(index);
+        return obj == null ? null : UDateTimeValue.sqlValueOf(obj);
+    }
+
+    private Object beforeGetRaw(int index) {
         if (isClosed == true) {
             errorHandler.setErrorCode(UErrorCode.ER_IS_CLOSED);
             return null;
@@ -2283,7 +2430,9 @@ public class UStatement {
                         if (eleSize <= 0) aArray.setElement(i, null);
                         else
                             aArray.setElement(
-                                    i, readData(inBuffer, baseType, eleSize, charsetName));
+                                    i,
+                                    UDateTimeValue.sqlValueOf(
+                                            readData(inBuffer, baseType, eleSize, charsetName)));
                     }
                     return aArray;
                 }
@@ -2296,7 +2445,7 @@ public class UStatement {
             case UUType.U_TYPE_VARBIT:
                 return inBuffer.readBytes(dataSize);
             case UUType.U_TYPE_RESULTSET:
-                if (UConnection.protoVersionIsLower(UConnection.PROTOCOL_V11)) {
+                if (relatedConnection.brokerProtocolVersion() < UConnection.PROTOCOL_V11) {
                     return new CUBRIDOutResultSet(relatedConnection, (long) inBuffer.readInt());
                 } else {
                     return new CUBRIDOutResultSet(relatedConnection, inBuffer.readLong());
@@ -2329,8 +2478,7 @@ public class UStatement {
             isFetchCompleted = true;
         }
 
-        if (functionCode == UFunctionCode.FETCH
-                && relatedConnection.protoVersionIsAbove(UConnection.PROTOCOL_V5)) {
+        if (functionCode == UFunctionCode.FETCH) {
             isFetchCompleted = inBuffer.readByte() == 1 ? true : false;
         }
     }

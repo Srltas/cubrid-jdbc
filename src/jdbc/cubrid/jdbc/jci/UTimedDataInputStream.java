@@ -76,6 +76,10 @@ public class UTimedDataInputStream {
         this.timeout = timeout;
     }
 
+    int getTimeout() {
+        return timeout;
+    }
+
     public int readInt(int timeout) throws IOException, UJciException {
         long begin = System.currentTimeMillis();
 
@@ -148,10 +152,6 @@ public class UTimedDataInputStream {
                 if (timeout > 0 && timeout - (System.currentTimeMillis() - begin) <= 0) {
                     String msg = UErrorCode.codeToMessage(UErrorCode.ER_TIMEOUT);
                     throw new SocketTimeoutException(msg);
-                }
-                if (UConnection.protoVersionIsLower(UConnection.PROTOCOL_V9)) {
-                    BrokerHandler.pingBroker(ip, port, PING_TIMEOUT);
-                    continue;
                 }
                 if (BrokerHandler.statusBroker(ip, port, pid, session, PING_TIMEOUT) != 1) {
                     if (retry) {
