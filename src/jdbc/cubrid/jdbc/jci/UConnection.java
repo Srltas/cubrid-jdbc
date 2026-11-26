@@ -44,18 +44,19 @@ import cubrid.jdbc.driver.CUBRIDConnection;
 import cubrid.jdbc.driver.CUBRIDDriver;
 import cubrid.jdbc.driver.CUBRIDXid;
 import cubrid.jdbc.driver.ConnectionProperties;
-import cubrid.jdbc.log.BasicLogger;
-import cubrid.jdbc.log.Log;
 import cubrid.jdbc.net.BrokerHandler;
 import cubrid.sql.CUBRIDOID;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.Socket;
+import java.net.SocketTimeoutException;
 import java.sql.SQLException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Vector;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import javax.transaction.xa.Xid;
 
 public abstract class UConnection {
@@ -66,6 +67,13 @@ public abstract class UConnection {
     public static final byte DBMS_PROXY_CUBRID = 4;
     public static final byte DBMS_PROXY_MYSQL = 5;
     public static final byte DBMS_PROXY_ORACLE = 6;
+    public static final byte DBMS_CGW_ORACLE = 7;
+    public static final byte DBMS_CGW_MYSQL = 8;
+    public static final byte DBMS_CGW_MARIADB = 9;
+
+    /* fn_savepoint mode bytes (cas_function.c): 1 = set, 2 = rollback to savepoint */
+    public static final byte SAVEPOINT_MODE_SET = 1;
+    public static final byte SAVEPOINT_MODE_ROLLBACK = 2;
 
     /* prepare flags */
     public static final byte PREPARE_INCLUDE_OID = 0x01;
@@ -101,15 +109,26 @@ public abstract class UConnection {
 
     public static final int PROTOCOL_V11 = 11;
     public static final int PROTOCOL_V12 = 12;
+    /* CAS-issued session id required (not just optionally checked) for QC/X1 query cancel,
+     * see KVE-2026-1827 and engine ticket CBRD-27389. Mirrors src/broker/cas_protocol.h's
+     * PROTOCOL_V13 (engine) and src/cci/broker_cas_protocol.h's PROTOCOL_V13 (CCI). */
+    public static final int PROTOCOL_V13 = 13;
 
     /* Current protocol version */
-    protected static final byte CAS_PROTOCOL_VERSION = PROTOCOL_V12;
+    protected static final byte CAS_PROTOCOL_VERSION = PROTOCOL_V13;
     protected static final byte CAS_PROTO_INDICATOR = 0x40;
     protected static final byte CAS_PROTO_VER_MASK = 0x3F;
     protected static final byte CAS_RENEWED_ERROR_CODE = (byte) 0x80;
     protected static final byte CAS_SUPPORT_HOLDABLE_RESULT = (byte) 0x40;
     /* Do not remove and rename CAS_RECONNECT_WHEN_SERVER_DOWN */
     protected static final byte CAS_RECONNECT_WHEN_SERVER_DOWN = (byte) 0x20;
+    /* Announces that a 4-byte CAS-issued session id is appended after the standard 10-byte
+     * query-cancel header sent to BrokerHandler.cancelBroker's "X1" request, so the broker can
+     * verify the cancel request against the session id in addition to source IP/port. This bit
+     * only controls wire framing on that one (unauthenticated) cancel request; whether the check
+     * is actually mandatory is decided by the broker from this connection's own CAS_PROTOCOL_VERSION
+     * (PROTOCOL_V13 or later), recorded at connect time, not from this bit. */
+    public static final byte CAS_SUPPORT_SESSION_CANCEL = (byte) 0x10;
 
     protected static final byte CAS_ORACLE_COMPAT_NUMBER_BEHAVIOR = (byte) 0x01;
 
@@ -165,11 +184,6 @@ public abstract class UConnection {
     protected static final int BROKER_INFO_SYSTEM_PARAM = 6;
     protected static final int BROKER_INFO_RESERVED3 = 7;
 
-    /* For backward compatibility */
-    protected static final int BROKER_INFO_MAJOR_VERSION = BROKER_INFO_PROTO_VERSION;
-    protected static final int BROKER_INFO_MINOR_VERSION = BROKER_INFO_FUNCTION_FLAG;
-    protected static final int BROKER_INFO_PATCH_VERSION = BROKER_INFO_SYSTEM_PARAM;
-
     public static final String ZERO_DATETIME_BEHAVIOR_CONVERT_TO_NULL = "convertToNull";
     public static final String ZERO_DATETIME_BEHAVIOR_EXCEPTION = "exception";
     public static final String ZERO_DATETIME_BEHAVIOR_ROUND = "round";
@@ -213,8 +227,9 @@ public abstract class UConnection {
         driverInfossl[9] = 0; // reserved
     }
 
+    private static final Logger LOGGER = Logger.getLogger(UConnection.class.getName());
+
     protected UError errorHandler;
-    protected Log log;
 
     protected ConnectionProperties connectionProperties = new ConnectionProperties();
     protected CUBRIDConnection cubridcon;
@@ -228,8 +243,7 @@ public abstract class UConnection {
 
     protected byte[] brokerInfo = null;
     protected byte[] casInfo = null;
-    protected int brokerVersion = 0;
-    protected static int protocolVersion = 0;
+    protected int protocolVersion = 0;
 
     public String casIp = "";
     public int casPort;
@@ -241,10 +255,11 @@ public abstract class UConnection {
     protected boolean lastAutoCommit = true;
     private boolean isAutoCommitBySelf = false;
 
-    protected boolean isClosed = false;
+    protected volatile boolean isClosed = false;
 
     private int lastIsolationLevel;
     private int lastLockTimeout = LOCK_TIMEOUT_NOT_USED;
+    private volatile int networkTimeout;
 
     protected byte[] dbInfo;
     protected String dbname = "";
@@ -253,7 +268,6 @@ public abstract class UConnection {
     protected String url = null;
 
     protected byte sessionId[] = createNullSession();
-    protected int oldSessionId = 0;
 
     boolean skip_checkcas = false;
     Vector<UStatement> pooled_ustmts;
@@ -335,7 +349,6 @@ public abstract class UConnection {
             outBuffer.newRequest(output, UFunctionCode.END_SESSION);
             send_recv_msg();
             sessionId = createNullSession();
-            oldSessionId = 0;
         } catch (Exception e) {
         }
     }
@@ -493,6 +506,11 @@ public abstract class UConnection {
     // UFunctionCode.GET_SCHEMA_INFO
     public synchronized UStatement getSchemaInfo(
             int type, String arg1, String arg2, byte flag, int shard_id) {
+        return getSchemaInfo(type, arg1, arg2, null, flag, shard_id);
+    }
+
+    public synchronized UStatement getSchemaInfo(
+            int type, String arg1, String arg2, String arg3, byte flag, int shard_id) {
         UStatement returnValue = null;
 
         errorHandler = new UError(this);
@@ -504,7 +522,9 @@ public abstract class UConnection {
             errorHandler.setErrorCode(UErrorCode.ER_SCHEMA_TYPE);
             return null;
         }
-        if (flag < 0 || flag > 3) {
+        boolean hasParameterPattern =
+                type == USchType.SCH_PROCEDURE_COLUMNS || type == USchType.SCH_FUNCTION_COLUMNS;
+        if (flag < 0 || flag > (hasParameterPattern ? 7 : 3)) {
             errorHandler.setErrorCode(UErrorCode.ER_ILLEGAL_FLAG);
             return null;
         }
@@ -521,9 +541,8 @@ public abstract class UConnection {
             else outBuffer.addStringWithNull(arg2);
             outBuffer.addByte(flag);
 
-            if (protoVersionIsAbove(PROTOCOL_V5)) {
-                outBuffer.addInt(shard_id);
-            }
+            outBuffer.addInt(shard_id);
+            if (arg3 != null) outBuffer.addStringWithNull(arg3);
 
             UInputBuffer inBuffer;
             inBuffer = send_recv_msg();
@@ -566,13 +585,11 @@ public abstract class UConnection {
 
             outBuffer.newRequest(output, UFunctionCode.EXECUTE_BATCH_STATEMENT);
             outBuffer.addByte(getAutoCommit() ? (byte) 1 : (byte) 0);
-            if (protoVersionIsAbove(UConnection.PROTOCOL_V4)) {
-                long remainingTime = getRemainingTime(queryTimeout * 1000);
-                if (queryTimeout > 0 && remainingTime <= 0) {
-                    throw createJciException(UErrorCode.ER_TIMEOUT);
-                }
-                outBuffer.addInt((int) remainingTime);
+            long remainingTime = getRemainingTime(queryTimeout * 1000);
+            if (queryTimeout > 0 && remainingTime <= 0) {
+                throw createJciException(UErrorCode.ER_TIMEOUT);
             }
+            outBuffer.addInt((int) remainingTime);
 
             for (int i = 0; i < batchSqlStmt.length; i++) {
                 if (batchSqlStmt[i] != null) outBuffer.addStringWithNull(batchSqlStmt[i]);
@@ -602,9 +619,7 @@ public abstract class UConnection {
                 }
             }
 
-            if (protoVersionIsAbove(UConnection.PROTOCOL_V5)) {
-                setShardId(inBuffer.readInt());
-            }
+            setShardId(inBuffer.readInt());
 
             update_executed = true;
             return batchResult;
@@ -1377,9 +1392,6 @@ public abstract class UConnection {
      * requests via broker handler
      */
     public boolean isValid(int timeout) throws SQLException {
-        if (protoVersionIsUnder(PROTOCOL_V9)) {
-            return !isClosed;
-        }
         try {
             byte[] session = new byte[4];
             for (int i = 0; i < 4; i++) session[i] = sessionId[i + 8];
@@ -1396,29 +1408,20 @@ public abstract class UConnection {
     }
 
     void cancel() throws UJciException, IOException {
-        if (protoVersionIsAbove(PROTOCOL_V4)) {
-            BrokerHandler.cancelBrokerEx(casIp, casPort, casProcessId, READ_TIMEOUT);
-        } else {
-            BrokerHandler.cancelBroker(casIp, casPort, casProcessId, READ_TIMEOUT);
+        byte[] session = null;
+
+        /* Only a PROTOCOL_V13 or later broker reads the session id appended to the cancel request. */
+        if (brokerProtocolVersion() >= PROTOCOL_V13) {
+            session = new byte[4];
+            for (int i = 0; i < 4; i++) session[i] = sessionId[i + 8];
         }
+
+        BrokerHandler.cancelBroker(casIp, casPort, casProcessId, session, READ_TIMEOUT);
     }
 
     /*
      * logger
      */
-    protected Log getLogger() {
-        if (log == null) {
-            log = new BasicLogger(connectionProperties.getLogFile());
-        }
-        return log;
-    }
-
-    protected void initLogger() {
-        if (connectionProperties.getLogOnException() || connectionProperties.getLogSlowQueries()) {
-            log = getLogger();
-        }
-    }
-
     private SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS");
 
     public void logSlowQuery(long begin, long end, String sql, UBindParameter p) {
@@ -1428,6 +1431,10 @@ public abstract class UConnection {
 
         long elapsed = end - begin;
         if (connectionProperties.getSlowQueryThresholdMillis() > elapsed) {
+            return;
+        }
+
+        if (!LOGGER.isLoggable(Level.FINEST)) {
             return;
         }
 
@@ -1448,9 +1455,7 @@ public abstract class UConnection {
             b.append('\n');
         }
 
-        synchronized (this) {
-            getLogger().logInfo(b.toString());
-        }
+        LOGGER.log(Level.FINEST, b.toString());
     }
 
     /*
@@ -1577,51 +1582,65 @@ public abstract class UConnection {
     }
 
     public boolean isErrorCommunication(int error) {
-        switch (error) {
-            case UErrorCode.ER_COMMUNICATION:
-            case UErrorCode.ER_ILLEGAL_DATA_SIZE:
-            case UErrorCode.CAS_ER_COMMUNICATION:
-                return true;
-            default:
-                return false;
-        }
+        return ReconnectPolicy.isErrorCommunication(error);
     }
 
     public boolean isErrorToReconnect(int error) {
-        if (isErrorCommunication(error)) {
-            return true;
-        }
-
-        switch (error) {
-            case -111: // ER_TM_SERVER_DOWN_UNILATERALLY_ABORTED
-            case -199: // ER_NET_SERVER_CRASHED
-            case -224: // ER_OBJ_NO_CONNECT
-            case -677: // ER_BO_CONNECT_FAILED
-                return true;
-            default:
-                return false;
-        }
+        return ReconnectPolicy.isErrorToReconnect(error);
     }
 
     public int getLockTimeout() {
         return lastLockTimeout;
     }
 
-    /*
-     * 3.0 synchronized public void savepoint(int mode, String name) {
-     * errorHandler = new UError(); if (isClosed == true) {
-     * errorHandler.setErrorCode(UErrorCode.ER_IS_CLOSED); return; }
-     *
-     * try { checkReconnect(); if (errorHandler.getErrorCode() !=
-     * UErrorCode.ER_NO_ERROR) return;
-     *
-     * outBuffer.newRequest(out, UFunctionCode.SAVEPOINT);
-     * outBuffer.addByte(mode); outBuffer.addStringWithNull(name);
-     *
-     * UInputBuffer inBuffer; inBuffer = send_recv_msg(); } catch (UJciException
-     * e) { e.toUError(errorHandler); } catch (IOException e) {
-     * errorHandler.setErrorCode(UErrorCode.ER_COMMUNICATION); } }
-     */
+    public void setNetworkTimeout(int milliseconds) {
+        networkTimeout = milliseconds;
+        Socket socket = client;
+        if (socket == null) {
+            return;
+        }
+
+        try {
+            socket.setSoTimeout(socketTimeout(milliseconds));
+        } catch (IOException e) {
+            logException(e);
+        }
+    }
+
+    public int getNetworkTimeout() {
+        return networkTimeout;
+    }
+
+    /* No CAS status check before the deadline: it fails first when the network is down. */
+    static int socketTimeout(int networkTimeout) {
+        return networkTimeout > 0 ? networkTimeout : SOCKET_TIMEOUT;
+    }
+
+    // UFunctionCode.SAVEPOINT
+    public synchronized void savepoint(byte mode, String name) {
+        errorHandler = new UError(this);
+        if (isClosed) {
+            errorHandler.setErrorCode(UErrorCode.ER_IS_CLOSED);
+            return;
+        }
+        try {
+            setBeginTime();
+            checkReconnect();
+            if (errorHandler.getErrorCode() != UErrorCode.ER_NO_ERROR) return;
+
+            outBuffer.newRequest(output, UFunctionCode.SAVEPOINT);
+            outBuffer.addByte(mode);
+            outBuffer.addStringWithNull(name);
+
+            send_recv_msg();
+        } catch (UJciException e) {
+            logException(e);
+            e.toUError(errorHandler);
+        } catch (IOException e) {
+            logException(e);
+            errorHandler.setErrorCode(UErrorCode.ER_COMMUNICATION);
+        }
+    }
 
     public byte getCASInfoStatus() {
         if (casInfo == null) {
@@ -1674,6 +1693,13 @@ public abstract class UConnection {
         return false;
     }
 
+    public boolean isConnectedToGateway() {
+        byte dbms_type = getDbmsType();
+        return dbms_type == DBMS_CGW_ORACLE
+                || dbms_type == DBMS_CGW_MYSQL
+                || dbms_type == DBMS_CGW_MARIADB;
+    }
+
     public boolean brokerInfoStatementPooling() {
         if (brokerInfo == null) return false;
 
@@ -1682,10 +1708,6 @@ public abstract class UConnection {
     }
 
     public boolean brokerInfoRenewedErrorCode() {
-        if ((brokerInfo[BROKER_INFO_PROTO_VERSION] & CAS_PROTO_INDICATOR) != CAS_PROTO_INDICATOR) {
-            return false;
-        }
-
         return (brokerInfo[BROKER_INFO_FUNCTION_FLAG] & CAS_RENEWED_ERROR_CODE)
                 == CAS_RENEWED_ERROR_CODE;
     }
@@ -1705,15 +1727,37 @@ public abstract class UConnection {
     }
 
     public boolean supportHoldableResult() {
-        if (brokerInfoSupportHoldableResult() || protoVersionIsSame(UConnection.PROTOCOL_V2)) {
+        if (brokerInfoSupportHoldableResult()) {
             return true;
         }
 
         return false;
     }
 
+    public synchronized boolean supportSchema() {
+        errorHandler = new UError(this);
+
+        /* XA, DataSource and useLazyConnection ask for metadata before the handshake. */
+        if (protocolVersion == 0 && isClosed == false) {
+            try {
+                setBeginTime();
+                checkReconnect();
+                endTransaction(true);
+                errorHandler.clear();
+            } catch (IOException e) {
+                logException(e);
+                errorHandler.setErrorCode(UErrorCode.ER_COMMUNICATION);
+            } catch (UJciException e) {
+                logException(e);
+                e.toUError(errorHandler);
+            }
+        }
+
+        return isConnectedToCubrid() && protocolVersion >= PROTOCOL_V11;
+    }
+
     public boolean isOracleCompatNumberBehavior() {
-        if (protoVersionIsAbove(PROTOCOL_V12)) {
+        if (protocolVersion >= PROTOCOL_V12) {
             if (brokerInfo == null) return false;
             return (brokerInfo[BROKER_INFO_SYSTEM_PARAM] & CAS_ORACLE_COMPAT_NUMBER_BEHAVIOR)
                     == CAS_ORACLE_COMPAT_NUMBER_BEHAVIOR;
@@ -1829,9 +1873,9 @@ public abstract class UConnection {
         outBuffer.sendData();
         /* set cas info to UConnection member variable and return InputBuffer */
         if (timeout > 0) {
-            inputBuffer = new UInputBuffer(input, this, timeout * 1000 + READ_TIMEOUT);
+            inputBuffer = receive(timeout * 1000 + READ_TIMEOUT);
         } else {
-            inputBuffer = new UInputBuffer(input, this, 0);
+            inputBuffer = receive(0);
         }
 
         if (UJCIUtil.isConsoleDebug()) {
@@ -1851,7 +1895,7 @@ public abstract class UConnection {
         byte prev_casinfo[] = casInfo;
         outBuffer.sendData();
         /* set cas info to UConnection member variable and return InputBuffer */
-        UInputBuffer inputBuffer = new UInputBuffer(input, this, 0);
+        UInputBuffer inputBuffer = receive(0);
 
         if (UJCIUtil.isConsoleDebug()) {
             printCasInfo(prev_casinfo, casInfo);
@@ -1866,6 +1910,21 @@ public abstract class UConnection {
         return send_recv_msg(true);
     }
 
+    private UInputBuffer receive(int headerTimeout) throws UJciException, IOException {
+        int networkTimeout = this.networkTimeout;
+        if (networkTimeout <= 0) {
+            return new UInputBuffer(input, this, headerTimeout, input.getTimeout());
+        }
+
+        try {
+            return new UInputBuffer(input, this, networkTimeout, networkTimeout);
+        } catch (SocketTimeoutException e) {
+            clientSocketClose();
+            isClosed = true;
+            throw createJciException(UErrorCode.ER_NETWORK_TIMEOUT);
+        }
+    }
+
     UUrlCache getUrlCache() {
         if (url_cache == null) {
             UUrlHostKey key = new UUrlHostKey(casIp, casPort, dbname, user);
@@ -1875,52 +1934,13 @@ public abstract class UConnection {
         return url_cache;
     }
 
-    protected int makeBrokerVersion(int major, int minor, int patch) {
-        int version = 0;
-        if ((major < 0 || major > Byte.MAX_VALUE)
-                || (minor < 0 || minor > Byte.MAX_VALUE)
-                || (patch < 0 || patch > Byte.MAX_VALUE)) {
-            return 0;
-        }
-
-        version = ((int) major << 24) | ((int) minor << 16) | ((int) patch << 8);
-        return version;
+    public int brokerProtocolVersion() {
+        return protocolVersion;
     }
 
-    protected int makeProtoVersion(int ver) {
-        return ((int) CAS_PROTO_INDICATOR << 24) | ver;
-    }
-
-    public int brokerInfoVersion() {
-        return brokerVersion;
-    }
-
-    public boolean protoVersionIsSame(int ver) {
-        if (brokerInfoVersion() == makeProtoVersion(ver)) {
-            return true;
-        }
-        return false;
-    }
-
-    public boolean protoVersionIsUnder(int ver) {
-        if (brokerInfoVersion() < makeProtoVersion(ver)) {
-            return true;
-        }
-        return false;
-    }
-
+    @Deprecated
     public boolean protoVersionIsAbove(int ver) {
-        if (brokerInfoVersion() >= makeProtoVersion(ver)) {
-            return true;
-        }
-        return false;
-    }
-
-    public static boolean protoVersionIsLower(int ver) {
-        if (protocolVersion < ver) {
-            return true;
-        }
-        return false;
+        return protocolVersion >= ver;
     }
 
     protected void checkReconnect() throws IOException, UJciException {
@@ -1928,18 +1948,14 @@ public abstract class UConnection {
             dbInfo = createDBInfo(dbname, user, passwd, url);
         }
         // set the session id
-        if (brokerInfoVersion() == 0) {
-            /* Interpretable session information supporting version
-             *   later than PROTOCOL_V3 as well as version earlier
-             *   than PROTOCOL_V3 should be delivered since no broker information
-             *   is provided at the time of initial connection.
+        if (brokerProtocolVersion() == 0) {
+            /* No broker information is provided at the time of initial connection,
+             * so a null session id is delivered.
              */
             String id = "0";
             UJCIUtil.copy_bytes(dbInfo, 608, 20, id);
-        } else if (protoVersionIsAbove(PROTOCOL_V3)) {
-            System.arraycopy(sessionId, 0, dbInfo, 608, 20);
         } else {
-            UJCIUtil.copy_bytes(dbInfo, 608, 20, new Integer(oldSessionId).toString());
+            System.arraycopy(sessionId, 0, dbInfo, 608, 20);
         }
 
         if (outBuffer == null) {
@@ -1974,7 +1990,9 @@ public abstract class UConnection {
 
     public UJciException createJciException(int err) {
         UJciException e = new UJciException(err);
-        if (connectionProperties == null || !connectionProperties.getLogOnException()) {
+        if (connectionProperties == null
+                || !connectionProperties.getLogOnException()
+                || !LOGGER.isLoggable(Level.FINE)) {
             return e;
         }
 
@@ -1982,9 +2000,7 @@ public abstract class UConnection {
         b.append("DUMP EXCEPTION\n");
         b.append("[JCI EXCEPTION]");
 
-        synchronized (this) {
-            getLogger().logInfo(b.toString(), e);
-        }
+        LOGGER.log(Level.FINE, b.toString(), e);
         return e;
     }
 
@@ -1995,7 +2011,10 @@ public abstract class UConnection {
     }
 
     public void logException(Throwable t) {
-        if (connectionProperties == null || !connectionProperties.getLogOnException()) {
+        if (t == null
+                || connectionProperties == null
+                || !connectionProperties.getLogOnException()
+                || !LOGGER.isLoggable(Level.FINE)) {
             return;
         }
 
@@ -2003,9 +2022,7 @@ public abstract class UConnection {
         b.append("DUMP EXCEPTION\n");
         b.append("[" + t.getClass().getName() + "]");
 
-        synchronized (this) {
-            getLogger().logInfo(b.toString(), t);
-        }
+        LOGGER.log(Level.FINE, b.toString(), t);
     }
 
     public boolean isActive() {
